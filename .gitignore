@@ -193,4 +193,23 @@ Thumbs.db
 temp/
 logs/
 output/
-.git/ 
+.git/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Black
+.black_cache/
+
+# Distribution
+*.tar.gz
+*.whl
+
+# Logs
+*.log
+logs/ 

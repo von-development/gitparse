@@ -34,11 +34,13 @@ async def async_example():
     """Asynchronous example of getting language statistics."""
     print("\n=== Asynchronous Language Statistics Example ===")
 
-    async with AsyncGitRepo(LOCAL_REPO) as local_repo, AsyncGitRepo(REMOTE_REPO) as remote_repo:
-
+    async with AsyncGitRepo(LOCAL_REPO) as local_repo, AsyncGitRepo(
+        REMOTE_REPO
+    ) as remote_repo:
         # Gather results concurrently
         local_stats, remote_stats = await asyncio.gather(
-            local_repo.get_language_stats(), remote_repo.get_language_stats()
+            local_repo.get_language_stats(),
+            remote_repo.get_language_stats(),
         )
 
         print("\nLocal Repository Language Stats:")

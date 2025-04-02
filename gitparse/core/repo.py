@@ -1,3 +1,6 @@
+"""Core repository handling module."""
+from __future__ import annotations
+
 import fnmatch
 import json
 import mimetypes
@@ -27,7 +30,7 @@ from datetime import datetime
 # Handle TOML parsing for different Python versions
 import tomllib as toml_parser
 
-from gitparse.schema.config import ExtractionConfig
+from gitparse.schema.config import ExtractionConfig, DependencyConfig, DependencyGroup
 from gitparse.vars.exclude_patterns import DEFAULT_EXCLUDE_PATTERNS
 from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
@@ -64,7 +67,7 @@ class GitRepo:
         _git_repo (Optional[git.Repo]): Git repository object if local
     """
 
-    def __init__(self, source: str, config: Optional[ExtractionConfig] = None):
+    def __init__(self, source: str, config: Optional[ExtractionConfig] = None) -> None:
         self.source = source
         self.config = config or ExtractionConfig()
         self._repo_path: Optional[Path] = None

@@ -73,13 +73,52 @@ ruff = "^0.1.0"
 line-length = 130
 target-version = "py38"
 
+# Exclude files and directories from ruff checks
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "examples",
+    "*.pyc",
+    "*.egg-info",
+]
+
 [tool.ruff.lint]
-# Ignore most formatting rules
-ignore = ["E", "W", "F", "I", "N", "B", "UP"]
+# Enable all rules by default
+select = ["ALL"]
+# Ignore specific rules
+ignore = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "B",  # flake8-bugbear
+    "UP", # pyupgrade
+    "D",  # pydocstyle
+    "ANN", # flake8-annotations
+]
 
 [tool.black]
 line-length = 100
 target-version = ["py38"]
+# Exclude files and directories from black formatting
+exclude = '''
+(
+    \.git
+    | \.venv
+    | build
+    | dist
+    | examples
+    | \.eggs
+    | \.mypy_cache
+    | \.pytest_cache
+    | \.ruff_cache
+    | \.tox
+)
+'''
 
 [tool.mypy]
 python_version = "3.8"
@@ -87,4 +126,11 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+# Exclude files and directories from mypy checks
+exclude = [
+    "examples/",
+    "build/",
+    "dist/",
+    "tests/",
+]
 

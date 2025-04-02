@@ -1,4 +1,5 @@
 """Async implementation of GitRepo functionality."""
+from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -58,7 +59,17 @@ class AsyncGitRepo:
 
     async def get_file_content(self, file_path: Union[str, Path]) -> Optional[str]:
         """Async version of get_file_content."""
-        return await self._run_in_executor(self._repo.get_file_content, file_path)
+        try:
+            if not self._repo._repo_path:
+                error_msg = "Repository path not initialized"
+                raise ValueError(error_msg)
+            full_path = self._repo._repo_path / file_path
+            if not full_path.exists():
+                error_msg = f"File not found: {file_path}"
+                raise FileNotFoundError(error_msg)
+            return await asyncio.to_thread(self._repo._get_file_content, file_path)
+        except Exception as e:
+            return None
 
     async def get_all_contents(self, max_file_size: int = 1_000_000) -> Dict[str, str]:
         """Async version of get_all_contents.
