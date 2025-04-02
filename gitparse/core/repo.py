@@ -17,6 +17,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 try:
     import magic
+
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
@@ -33,6 +34,7 @@ from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
 class GitError(Exception):
     """Custom exception class for Git-related errors."""
+
     pass
 
 
@@ -81,7 +83,7 @@ class GitRepo:
         """Initialize repository path from source."""
         # Convert source to string if it's a Path object
         source_str = str(self.source) if isinstance(self.source, Path) else self.source
-        
+
         # Check if source is URL or local path
         parsed = urlparse(source_str)
         self._is_remote = bool(parsed.scheme and parsed.netloc)
@@ -119,10 +121,7 @@ class GitRepo:
             raise GitError("Failed to clone repository") from err
 
     def _save_output(
-        self,
-        data: Any,
-        output_file: Optional[Union[str, Path]] = None,
-        prefix: str = ""
+        self, data: Any, output_file: Optional[Union[str, Path]] = None, prefix: str = ""
     ) -> None:
         """Save data to a file if output_file is specified."""
         if not output_file:
@@ -160,7 +159,7 @@ class GitRepo:
         try:
             info = {
                 "name": self._git_repo.working_dir.split(os.path.sep)[-1],
-                "is_bare": self._git_repo.bare
+                "is_bare": self._git_repo.bare,
             }
 
             # Try to get branch and commit info
@@ -228,50 +227,29 @@ class GitRepo:
         return [str(f.relative_to(self._repo_path)) for f in files]
 
     def _format_tree_markdown(self, files: List[Path]) -> List[str]:
-        """Format files as a markdown tree."""
+        """Format file tree in markdown style."""
         tree = []
-        last_parts = []
-
-        for file in files:
+        for file in sorted(files):
             rel_path = file.relative_to(self._repo_path)
-            parts = rel_path.parts
-
-            # Calculate common prefix with last path
-            common = 0
-            for i, (last, curr) in enumerate(zip(last_parts, parts)):
-                if last != curr:
-                    break
-                common = i + 1
-
-            # Add new directory levels
-            for level, part in enumerate(parts[common:-1], common):
-                tree.append("  " * level + "- " + part + "/")
-
-            # Add file
-            tree.append("  " * (len(parts) - 1) + "- " + parts[-1])
-            last_parts = parts
-
+            indent = "  " * (len(rel_path.parts) - 1)
+            tree.append(f"{indent}- {rel_path.name}")
         return tree
 
     def _format_tree_structured(self, files: List[Path]) -> Dict:
-        """Format files as a nested dictionary structure."""
-        tree: Dict = {}
-
-        for file in files:
-            rel_path = file.relative_to(self._repo_path)
-            parts = rel_path.parts
-
+        """Format file tree as nested dictionary."""
+        tree = {}
+        for file in sorted(files):
             current = tree
-            for part in parts[:-1]:
+            rel_path = file.relative_to(self._repo_path)
+            for part in rel_path.parts[:-1]:
                 current = current.setdefault(part, {})
-            current[parts[-1]] = None  # Files are leaf nodes
-
+            current[rel_path.name] = None
         return tree
 
     def get_file_tree(
         self,
         style: Literal["flattened", "markdown", "structured", "dict"] = "flattened",
-        output_file: Optional[Union[str, Path]] = None
+        output_file: Optional[Union[str, Path]] = None,
     ) -> Union[List[str], Dict]:
         """Get repository file tree in specified format.
 
@@ -311,20 +289,14 @@ class GitRepo:
             raise RuntimeError("Repository path not initialized")
 
         # Common README filenames to check
-        readme_names = [
-            "README.md",
-            "Readme.md",
-            "readme.md",
-            "README",
-            "README.rst"
-        ]
+        readme_names = ["README.md", "Readme.md", "readme.md", "README", "README.rst"]
 
         # Check each possible README file
         for name in readme_names:
             readme_path = self._repo_path / name
             if readme_path.exists() and readme_path.is_file():
                 try:
-                    return readme_path.read_text(encoding='utf-8')
+                    return readme_path.read_text(encoding="utf-8")
                 except UnicodeDecodeError:
                     continue  # Try next file if this one isn't text
 
@@ -332,16 +304,16 @@ class GitRepo:
 
     def get_readme_content(self, output_file: Optional[Union[str, Path]] = None) -> Optional[str]:
         """Get the content of the repository's README file.
-        
+
         Args:
             output_file: Optional path to save results. Use "auto" for auto-generated filename.
-            
+
         Returns:
             README content as string or None if not found
         """
         if not self._repo_path:
             return None
-            
+
         # Look for README files with common extensions
         readme_patterns = ["README.md", "README.rst", "README.txt", "README"]
         for pattern in readme_patterns:
@@ -361,17 +333,19 @@ class GitRepo:
         requirements = []
         for line in path.read_text().splitlines():
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
 
             try:
                 req = Requirement(line)
-                requirements.append({
-                    "name": req.name,
-                    "specifier": str(req.specifier) if req.specifier else "",
-                    "extras": sorted(req.extras) if req.extras else [],
-                    "url": req.url if hasattr(req, 'url') else None
-                })
+                requirements.append(
+                    {
+                        "name": req.name,
+                        "specifier": str(req.specifier) if req.specifier else "",
+                        "extras": sorted(req.extras) if req.extras else [],
+                        "url": req.url if hasattr(req, "url") else None,
+                    }
+                )
             except InvalidRequirement:
                 # Skip invalid requirements
                 continue
@@ -385,10 +359,7 @@ class GitRepo:
 
         try:
             data = toml_parser.loads(path.read_text())
-            deps: Dict[str, Dict[str, str]] = {
-                "dependencies": {},
-                "dev-dependencies": {}
-            }
+            deps: Dict[str, Dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
 
             # Main dependencies
             if "tool" in data and "poetry" in data["tool"]:
@@ -423,35 +394,24 @@ class GitRepo:
 
         try:
             data = json.loads(path.read_text())
-            deps: Dict[str, List[Dict[str, str]]] = {
-                "dependencies": [],
-                "devDependencies": []
-            }
+            deps: Dict[str, List[Dict[str, str]]] = {"dependencies": [], "devDependencies": []}
 
             # Regular dependencies
             if "dependencies" in data:
                 for name, version in data["dependencies"].items():
-                    deps["dependencies"].append({
-                        "name": name,
-                        "version": version
-                    })
+                    deps["dependencies"].append({"name": name, "version": version})
 
             # Dev dependencies
             if "devDependencies" in data:
                 for name, version in data["devDependencies"].items():
-                    deps["devDependencies"].append({
-                        "name": name,
-                        "version": version
-                    })
+                    deps["devDependencies"].append({"name": name, "version": version})
 
             return deps
         except Exception:
             return {}
 
     def get_dependencies(
-        self,
-        output_file: Optional[str] = None,
-        config: Optional[ExtractionConfig] = None
+        self, output_file: Optional[str] = None, config: Optional[ExtractionConfig] = None
     ) -> Dict[str, Union[List[str], Dict[str, str]]]:
         """Get repository dependencies from package files."""
         if not self._repo_path:
@@ -460,7 +420,7 @@ class GitRepo:
         dependencies = {
             "requirements.txt": [],
             "pyproject.toml": {"dependencies": [], "dev-dependencies": []},
-            "package.json": {"dependencies": [], "devDependencies": []}
+            "package.json": {"dependencies": [], "devDependencies": []},
         }
 
         # Process each package file if it exists
@@ -486,7 +446,7 @@ class GitRepo:
 
         try:
             # On Windows, sometimes Git keeps handles open briefly
-            if sys.platform == 'win32':
+            if sys.platform == "win32":
                 time.sleep(0.1)  # Small delay to let handles close
 
             # Close any Git objects that might hold handles
@@ -503,73 +463,25 @@ class GitRepo:
         """Cleanup temporary directory if it exists."""
         self._cleanup_temp_dir()
 
-    def _get_file_type(self, path: Path) -> tuple[str, bool]:
-        """Determine file type and whether it's binary.
-
-        Args:
-            path: Path to the file
-
-        Returns:
-            Tuple of (content_type, is_binary)
-        """
+    def _get_file_type(self, path: Path) -> str:
+        """Get MIME type of a file."""
         # First try by extension
-        content_type, _ = mimetypes.guess_type(str(path))
+        mime_type, _ = mimetypes.guess_type(str(path))
+        if mime_type:
+            return mime_type
 
-        if not content_type:
-            if HAS_MAGIC:
-                try:
-                    content_type = magic.from_file(str(path), mime=True)
-                except Exception:
-                    content_type = None
+        # Then try python-magic if available
+        if HAS_MAGIC:
+            try:
+                return magic.from_file(str(path), mime=True)
+            except Exception:
+                pass
 
-            # Fallback to basic extension mapping
-            if not content_type:
-                ext = path.suffix.lower()
-                content_type = {
-                    '.py': 'text/x-python',
-                    '.js': 'text/javascript',
-                    '.ts': 'text/typescript',
-                    '.html': 'text/html',
-                    '.css': 'text/css',
-                    '.md': 'text/markdown',
-                    '.rst': 'text/x-rst',
-                    '.json': 'application/json',
-                    '.yml': 'application/x-yaml',
-                    '.yaml': 'application/x-yaml',
-                    '.xml': 'application/xml',
-                    '.txt': 'text/plain',
-                    '.sh': 'text/x-shellscript',
-                    '.bash': 'text/x-shellscript',
-                    '.php': 'text/x-php',
-                    '.rb': 'text/x-ruby',
-                    '.java': 'text/x-java',
-                    '.c': 'text/x-c',
-                    '.cpp': 'text/x-c++',
-                    '.h': 'text/x-c',
-                    '.hpp': 'text/x-c++',
-                    '.cs': 'text/x-csharp',
-                    '.go': 'text/x-go',
-                    '.rs': 'text/x-rust',
-                    '.swift': 'text/x-swift',
-                    '.kt': 'text/x-kotlin',
-                    '.kts': 'text/x-kotlin',
-                    '.scala': 'text/x-scala',
-                    '.pl': 'text/x-perl',
-                    '.r': 'text/x-r',
-                    '.dart': 'text/x-dart',
-                    '.lua': 'text/x-lua',
-                    '.sql': 'text/x-sql'
-                }.get(ext, 'application/octet-stream')
-
-        # Determine if binary by trying to read as text
-        try:
-            with open(path, encoding='utf-8') as f:
-                f.read(1024)  # Try reading as text
-            is_binary = False
-        except UnicodeDecodeError:
-            is_binary = True
-
-        return content_type, is_binary
+        # Fallback to basic type mapping
+        ext = path.suffix.lower()
+        if ext in COMMON_EXTENSIONS:
+            return COMMON_EXTENSIONS[ext]
+        return "application/octet-stream"
 
     def _map_mime_to_language(self, mime_type: str) -> str:
         """Map MIME type to programming language name."""
@@ -582,11 +494,10 @@ class GitRepo:
         if ext in COMMON_EXTENSIONS:
             return COMMON_EXTENSIONS[ext]
 
-        return 'Other'
+        return "Other"
 
     def get_language_stats(
-        self,
-        output_file: Optional[str] = None
+        self, output_file: Optional[str] = None
     ) -> Dict[str, Dict[str, Union[int, float]]]:
         """Get language statistics for the repository."""
         if not self._repo_path:
@@ -616,10 +527,7 @@ class GitRepo:
         if total_bytes > 0:
             for lang_stats in stats.values():
                 bytes_count = lang_stats["bytes"]
-                lang_stats["percentage"] = round(
-                    (bytes_count / total_bytes) * 100,
-                    2
-                )
+                lang_stats["percentage"] = round((bytes_count / total_bytes) * 100, 2)
 
         self._save_output(stats, output_file, "language_stats")
         return stats
@@ -643,7 +551,7 @@ class GitRepo:
             "text_files": 0,
             "avg_file_size": 0,
             "binary_ratio": 0.0,
-            "language_breakdown": self.get_language_stats()
+            "language_breakdown": self.get_language_stats(),
         }
 
         # Process all files
@@ -664,72 +572,64 @@ class GitRepo:
         # Calculate averages and ratios
         if stats["total_files"] > 0:
             stats["avg_file_size"] = stats["total_size"] / stats["total_files"]
-            stats["binary_ratio"] = (
-                stats["binary_files"] / stats["total_files"]
-            ) * 100
+            stats["binary_ratio"] = (stats["binary_files"] / stats["total_files"]) * 100
 
         self._save_output(stats, output_file, "statistics")
         return stats
 
     def get_repo_stats(self, output_file: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
         """Get repository statistics including file counts, sizes, and types.
-        
+
         Args:
             output_file: Optional path to save results. Use "auto" for auto-generated filename.
-            
+
         Returns:
             Dictionary containing repository statistics
         """
         if not self._repo_path:
             return {}
-            
+
         files = self._walk_directory(self._repo_path)
         total_size = 0
         binary_count = 0
         file_types: Dict[str, int] = {}
         largest_files = []
-        
+
         for file in files:
             # Get file size
             size = file.stat().st_size
             total_size += size
-            
+
             # Track file type
             ext = file.suffix.lower()
             if ext:
                 file_types[ext] = file_types.get(ext, 0) + 1
-                
+
             # Check if binary
             if self._is_binary_file(file):
                 binary_count += 1
-                
+
             # Track largest files
-            largest_files.append({
-                "path": str(file.relative_to(self._repo_path)),
-                "size": size
-            })
-            
+            largest_files.append({"path": str(file.relative_to(self._repo_path)), "size": size})
+
         # Sort and limit largest files
         largest_files.sort(key=lambda x: x["size"], reverse=True)
         largest_files = largest_files[:10]  # Keep top 10
-        
+
         stats = {
             "total_files": len(files),
             "total_size": total_size,
             "average_file_size": total_size / len(files) if files else 0,
             "binary_ratio": binary_count / len(files) if files else 0,
             "file_types": file_types,
-            "largest_files": largest_files
+            "largest_files": largest_files,
         }
-        
+
         self._save_output(stats, output_file, "repo_stats")
         return stats
 
     def get_file_content(
-        self,
-        file_path: str,
-        output_file: Optional[str] = None,
-        encoding: str = "utf-8"
+        self, file_path: str, output_file: Optional[str] = None, encoding: str = "utf-8"
     ) -> Optional[str]:
         """Get content of a specific file from the repository.
 
@@ -764,7 +664,7 @@ class GitRepo:
         self,
         max_file_size: Optional[int] = None,
         exclude_patterns: Optional[List[str]] = None,
-        output_file: Optional[str] = None
+        output_file: Optional[str] = None,
     ) -> Dict[str, str]:
         """Get contents of all text files in the repository."""
         if not self._repo_path:
@@ -782,8 +682,7 @@ class GitRepo:
             # Skip if file matches any exclude pattern
             rel_path = str(file_path.relative_to(self._repo_path))
             if exclude_patterns and any(
-                fnmatch.fnmatch(rel_path, pattern)
-                for pattern in exclude_patterns
+                fnmatch.fnmatch(rel_path, pattern) for pattern in exclude_patterns
             ):
                 continue
 
@@ -799,7 +698,7 @@ class GitRepo:
         self,
         directory: str,
         style: Literal["flattened", "markdown", "structured"] = "flattened",
-        output_file: Optional[str] = None
+        output_file: Optional[str] = None,
     ) -> Union[List[str], Dict]:
         """Get file tree for a specific directory."""
         if not self._repo_path:
@@ -822,9 +721,7 @@ class GitRepo:
         return result
 
     def get_directory_contents(
-        self,
-        directory: str,
-        output_file: Optional[str] = None
+        self, directory: str, output_file: Optional[str] = None
     ) -> Dict[str, str]:
         """Get contents of all files in a directory."""
         if not self._repo_path:
@@ -848,31 +745,46 @@ class GitRepo:
 
     def _is_binary_file(self, path: Path) -> bool:
         """Check if a file is binary.
-        
+
         Args:
             path: Path to the file to check
-            
+
         Returns:
             True if file is binary, False otherwise
         """
         # First check extension
         ext = path.suffix.lower()
-        if ext in {'.jpg', '.jpeg', '.png', '.gif', '.ico', '.pdf', '.zip', 
-                  '.gz', '.tar', '.rar', '.exe', '.dll', '.so', '.pyc'}:
+        if ext in {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".ico",
+            ".pdf",
+            ".zip",
+            ".gz",
+            ".tar",
+            ".rar",
+            ".exe",
+            ".dll",
+            ".so",
+            ".pyc",
+        }:
             return True
-            
+
         # Use python-magic if available
         if HAS_MAGIC:
             try:
                 mime = magic.from_file(str(path), mime=True)
-                return not mime.startswith(('text/', 'application/json', 
-                                         'application/xml', 'application/x-yaml'))
+                return not mime.startswith(
+                    ("text/", "application/json", "application/xml", "application/x-yaml")
+                )
             except Exception:
                 pass
-                
+
         # Fallback: try reading as text
         try:
-            with path.open('r', encoding='utf-8') as f:
+            with path.open("r", encoding="utf-8") as f:
                 f.read(1024)  # Read first 1KB
             return False
         except UnicodeDecodeError:

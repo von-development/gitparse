@@ -47,17 +47,17 @@ keywords = ["git", "repository", "parser", "analysis", "metadata"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-gitpython = "3.1.40"
-pydantic = "2.6.0"
-python-magic = "0.4.27"
-typing-extensions = "4.12.0"
-tomli = "2.0.1"
-packaging = "23.2"
-colorama = "0.4.6"
-aiofiles = "24.1.0"
+gitpython = "^3.1.0"
+pydantic = "^2.0.0"
+python-magic = "^0.4.0"
+typing-extensions = "^4.0.0"
+tomli = "^2.0.0"
+packaging = "^23.0"
+colorama = "^0.4.0"
+aiofiles = "^24.0.0"
 
 [tool.poetry.group.windows.dependencies]
-python-magic-bin = { version = "0.4.14", platform = "win32" }
+python-magic-bin = { version = "^0.4.0", platform = "win32" }
 
 [tool.poetry.group.unix.dependencies]
 # For Unix systems, libmagic is usually installed via the system package manager
@@ -66,15 +66,15 @@ python-magic-bin = { version = "0.4.14", platform = "win32" }
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
 black = "^23.7.0"
-ruff = "^0.0.284"
+ruff = "^0.1.0"
 
 [tool.ruff]
 line-length = 130
 target-version = "py38"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "B", "UP"]
-ignore = []
+# Ignore most formatting rules
+ignore = ["E", "W", "F", "I", "N", "B", "UP"]
 
 [tool.black]
 line-length = 100

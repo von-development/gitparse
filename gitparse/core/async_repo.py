@@ -28,18 +28,14 @@ class AsyncGitRepo:
     async def _run_in_executor(self, func, *args, **kwargs):
         """Run a sync function in thread pool executor."""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self._executor,
-            partial(func, *args, **kwargs)
-        )
+        return await loop.run_in_executor(self._executor, partial(func, *args, **kwargs))
 
     async def get_repository_info(self) -> Dict[str, str]:
         """Async version of get_repository_info."""
         return await self._run_in_executor(self._repo.get_repository_info)
 
     async def get_file_tree(
-        self,
-        style: Literal["flattened", "markdown", "structured"] = "flattened"
+        self, style: Literal["flattened", "markdown", "structured"] = "flattened"
     ) -> Union[List[str], Dict]:
         """Async version of get_file_tree."""
         return await self._run_in_executor(self._repo.get_file_tree, style)
@@ -73,10 +69,7 @@ class AsyncGitRepo:
             raise RuntimeError("Repository path not initialized")
 
         # Get all files first
-        files = await self._run_in_executor(
-            self._repo._walk_directory,
-            self._repo._repo_path
-        )
+        files = await self._run_in_executor(self._repo._walk_directory, self._repo._repo_path)
 
         # Filter large files and get relative paths
         file_paths = []
@@ -102,23 +95,14 @@ class AsyncGitRepo:
         return contents
 
     async def get_directory_tree(
-        self,
-        directory: str,
-        style: Literal["flattened", "markdown", "structured"] = "flattened"
+        self, directory: str, style: Literal["flattened", "markdown", "structured"] = "flattened"
     ) -> Union[List[str], Dict]:
         """Async version of get_directory_tree."""
-        return await self._run_in_executor(
-            self._repo.get_directory_tree,
-            directory,
-            style
-        )
+        return await self._run_in_executor(self._repo.get_directory_tree, directory, style)
 
     async def get_directory_contents(self, directory: str) -> Dict[str, str]:
         """Async version of get_directory_contents."""
-        return await self._run_in_executor(
-            self._repo.get_directory_contents,
-            directory
-        )
+        return await self._run_in_executor(self._repo.get_directory_contents, directory)
 
     async def __aenter__(self):
         """Async context manager entry."""

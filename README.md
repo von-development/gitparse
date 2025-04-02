@@ -1,33 +1,6 @@
 # GitParse
 
-A typed, modular Python library for structured repository parsing. GitParse allows you to extract metadata and content from Git repositories in a structured way.
-
-## ✅ Features
-
-### 📂 File System Analysis
-- Complete file tree traversal with multiple output formats (flattened, markdown, structured)
-- Directory-specific operations (tree and contents)
-- Pattern-based file filtering (include/exclude patterns)
-- File size limits and binary detection
-- Configurable output formats
-
-### 📦 Dependency Analysis
-- Python requirements.txt parsing
-- Poetry (pyproject.toml) dependency extraction
-- Node.js package.json parsing
-- Support for both main and dev dependencies
-
-### 🔍 Repository Information
-- Basic repository metadata
-- Git information (when available)
-- README content extraction
-- Multiple README format support (md, rst)
-
-### 📊 Language Statistics
-- File extension analysis
-- Content-based language detection
-- Size and count statistics
-- Binary vs text ratio
+A Python library for extracting and analyzing Git repository content with type safety.
 
 ## Installation
 
@@ -35,121 +8,124 @@ A typed, modular Python library for structured repository parsing. GitParse allo
 pip install gitparse
 ```
 
-Or with Poetry:
-
-```bash
-poetry add gitparse
-```
-
-## Usage Examples
-
-### Basic Repository Analysis
-
-```python
-from gitparse import GitRepo, ExtractionConfig
-
-# Initialize with configuration
-config = ExtractionConfig(
-    max_file_size=5_000_000,  # 5MB
-    exclude_patterns=["*.pyc", "__pycache__/*"],
-    include_patterns=["*.py", "*.md"]
-)
-
-# Create repository object
-repo = GitRepo("path/to/repo", config=config)
-
-# Get repository information
-info = repo.get_repository_info()
-print(f"Repository: {info['name']}")
-
-# Get file tree (multiple formats available)
-files = repo.get_file_tree(style="markdown")
-print("\n".join(files))
-```
-
-### Directory-Specific Operations
+## Quick Start
 
 ```python
 from gitparse import GitRepo
 
-# Initialize repository
+# Local repository
+repo = GitRepo("path/to/repo")
+
+# Remote repository
 repo = GitRepo("https://github.com/username/repo")
+```
 
-# Get tree for specific directory
-tree = repo.get_directory_tree("src/components", style="markdown")
-print("\n".join(tree))
+## Features & Examples
 
-# Get contents of specific directory
-contents = repo.get_directory_contents("src/components")
-for path, content in contents.items():
-    print(f"File: {path}, Size: {len(content)} bytes")
+### Repository Info
+
+```python
+repo = GitRepo("path/to/repo")
+info = repo.get_repository_info()
+
+print(f"Name: {info['name']}")
+print(f"Default Branch: {info.get('default_branch')}")
+print(f"Head Commit: {info.get('head_commit')}")
+```
+
+### File Tree
+
+```python
+# Get file tree in different formats
+markdown_tree = repo.get_file_tree(style="markdown")
+dict_tree = repo.get_file_tree(style="dict")
+flat_tree = repo.get_file_tree(style="flattened")
+
+# Print markdown tree
+print("\n".join(markdown_tree))
+```
+
+### Dependencies
+
+```python
+deps = repo.get_dependencies()
+
+# Python dependencies from pyproject.toml
+if "pyproject.toml" in deps:
+    python_deps = deps["pyproject.toml"]
+    print("\nPython Dependencies:")
+    for name, version in python_deps["dependencies"].items():
+        print(f"- {name}: {version}")
+
+# Node.js dependencies from package.json
+if "package.json" in deps:
+    node_deps = deps["package.json"]
+    print("\nNode.js Dependencies:")
+    for name, version in node_deps["dependencies"].items():
+        print(f"- {name}: {version}")
 ```
 
 ### Async Support
 
 ```python
 import asyncio
-from gitparse.core.async_repo import AsyncGitRepo
+from gitparse import AsyncGitRepo
 
-async def analyze_repo():
-    async with AsyncGitRepo("https://github.com/username/repo") as repo:
-        # Get directory tree and contents concurrently
-        tree, contents = await asyncio.gather(
-            repo.get_directory_tree("src/components"),
-            repo.get_directory_contents("src/components")
+async def main():
+    async with AsyncGitRepo("path/to/repo") as repo:
+        # Get multiple pieces of info concurrently
+        info, tree = await asyncio.gather(
+            repo.get_repository_info(),
+            repo.get_file_tree(style="markdown")
         )
-        return tree, contents
+        return info, tree
 
 # Run async code
-tree, contents = asyncio.run(analyze_repo())
+info, tree = asyncio.run(main())
 ```
 
-### Command Line Interface
+### CLI Usage
 
 ```bash
-# Get repository information
-gitparse https://github.com/username/repo info
+# Get basic info
+gitparse path/to/repo info
 
-# Get file tree in markdown format
-gitparse https://github.com/username/repo tree --style markdown
+# Get file tree
+gitparse path/to/repo tree --style markdown
 
-# Get specific directory tree
-gitparse https://github.com/username/repo dir-tree src/components
+# Get dependencies
+gitparse path/to/repo deps
 
-# Get specific directory contents
-gitparse https://github.com/username/repo dir-contents src/components
-
-# Get language statistics
-gitparse https://github.com/username/repo langs
-
-# Get file content
-gitparse https://github.com/username/repo content README.md
+# Get specific file content
+gitparse path/to/repo content README.md
 ```
 
-## Configuration
-
-The `ExtractionConfig` class supports:
+### Configuration
 
 ```python
+from gitparse import GitRepo, ExtractionConfig
+
 config = ExtractionConfig(
-    max_file_size=10_000_000,  # 10MB
-    exclude_patterns=["*.pyc", "__pycache__/*", "*.egg-info/*"],
-    include_patterns=["*.py", "*.md", "*.txt"],
-    output_style="flattened",  # or "markdown" or "structured"
-    temp_dir=None  # Optional custom temp directory
+    max_file_size=5_000_000,  # 5MB limit
+    exclude_patterns=["*.pyc", "__pycache__/*"],
+    include_patterns=["*.py", "*.md"]
 )
+
+repo = GitRepo("path/to/repo", config=config)
 ```
 
 ## Development
 
-1. Clone the repository
-2. Install dependencies: `poetry install`
-3. Run tests: `poetry run pytest`
-4. Try examples: `cd examples && python 01_basic_usage.py`
+```bash
+# Install dependencies
+poetry install
 
-## Contributing
+# Run tests
+poetry run pytest
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+# Run linting
+poetry run ruff check .
+```
 
 ## License
 

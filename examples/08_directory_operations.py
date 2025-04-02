@@ -2,6 +2,7 @@
 Example showing how to work with specific directories using GitParse.
 Demonstrates both synchronous and asynchronous usage of directory operations.
 """
+
 import asyncio
 
 from gitparse import GitRepo
@@ -10,6 +11,7 @@ from gitparse.core.async_repo import AsyncGitRepo
 # Example repository and directory
 REPO_URL = "https://github.com/assafelovic/gpt-researcher"
 TARGET_DIR = "multi_agents/agents"
+
 
 def sync_example():
     """Synchronous example of directory operations."""
@@ -30,6 +32,7 @@ def sync_example():
     for path in contents:
         print(f"- {path}")
 
+
 async def async_example():
     """Asynchronous example of directory operations."""
     print("\n=== Asynchronous Directory Operations Example ===")
@@ -38,7 +41,7 @@ async def async_example():
         # Get both tree and contents concurrently
         tree, contents = await asyncio.gather(
             repo.get_directory_tree(TARGET_DIR, style="markdown"),
-            repo.get_directory_contents(TARGET_DIR)
+            repo.get_directory_contents(TARGET_DIR),
         )
 
         print(f"\nDirectory Tree for {TARGET_DIR}:")
@@ -48,6 +51,7 @@ async def async_example():
         for path in contents:
             print(f"- {path}")
 
+
 def main():
     """Run both sync and async examples."""
     # Run synchronous example
@@ -55,6 +59,7 @@ def main():
 
     # Run async example
     asyncio.run(async_example())
+
 
 if __name__ == "__main__":
     main()

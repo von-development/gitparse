@@ -6,9 +6,9 @@ from gitparse.vars.git_hosts import GIT_HOSTS
 from gitparse.vars.limits import FILE_SIZE_LIMITS
 
 __all__ = [
-    'DEFAULT_EXCLUDE_PATTERNS',
-    'MIME_TO_LANGUAGE',
-    'COMMON_EXTENSIONS',
-    'FILE_SIZE_LIMITS',
-    'GIT_HOSTS'
+    "DEFAULT_EXCLUDE_PATTERNS",
+    "MIME_TO_LANGUAGE",
+    "COMMON_EXTENSIONS",
+    "FILE_SIZE_LIMITS",
+    "GIT_HOSTS",
 ]

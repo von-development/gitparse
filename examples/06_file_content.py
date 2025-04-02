@@ -2,6 +2,7 @@
 Example showing how to get file content from repositories using GitParse.
 Demonstrates both synchronous and asynchronous usage.
 """
+
 import asyncio
 
 from gitparse import GitRepo
@@ -12,6 +13,7 @@ LOCAL_REPO = "."
 LOCAL_FILE = "README.md"
 REMOTE_REPO = "https://github.com/pallets/flask"
 REMOTE_FILE = "setup.py"
+
 
 def sync_example():
     """Synchronous example of getting file content."""
@@ -29,23 +31,23 @@ def sync_example():
     print(f"\nRemote Repository File ({REMOTE_FILE}):")
     print(remote_content[:500] + "..." if remote_content else "File not found")
 
+
 async def async_example():
     """Asynchronous example of getting file content."""
     print("\n=== Asynchronous File Content Example ===")
 
-    async with AsyncGitRepo(LOCAL_REPO) as local_repo, \
-             AsyncGitRepo(REMOTE_REPO) as remote_repo:
+    async with AsyncGitRepo(LOCAL_REPO) as local_repo, AsyncGitRepo(REMOTE_REPO) as remote_repo:
 
         # Gather results concurrently
         local_content, remote_content = await asyncio.gather(
-            local_repo.get_file_content(LOCAL_FILE),
-            remote_repo.get_file_content(REMOTE_FILE)
+            local_repo.get_file_content(LOCAL_FILE), remote_repo.get_file_content(REMOTE_FILE)
         )
 
         print(f"\nLocal Repository File ({LOCAL_FILE}):")
         print(local_content[:500] + "..." if local_content else "File not found")
         print(f"\nRemote Repository File ({REMOTE_FILE}):")
         print(remote_content[:500] + "..." if remote_content else "File not found")
+
 
 if __name__ == "__main__":
     # Run synchronous example

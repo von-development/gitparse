@@ -1,1 +1,1 @@
-"""Test package for GitParse.""" 
+"""Test package for GitParse."""

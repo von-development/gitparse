@@ -6,7 +6,6 @@ DEFAULT_EXCLUDE_PATTERNS = {
     ".svn/**",
     ".hg/**",
     ".bzr/**",
-
     # Python
     "**/__pycache__/**",
     "**/*.pyc",
@@ -20,12 +19,10 @@ DEFAULT_EXCLUDE_PATTERNS = {
     "**/.venv/**",
     "**/env/**",
     "**/venv/**",
-
     # Node.js
     "**/node_modules/**",
     "**/bower_components/**",
     "**/.npm/**",
-
     # IDEs and Editors
     "**/.idea/**",
     "**/.vscode/**",
@@ -33,21 +30,17 @@ DEFAULT_EXCLUDE_PATTERNS = {
     "**/*.swp",
     "**/*.swo",
     "**/*~",
-
     # Build and Distribution
     "**/build/**",
     "**/dist/**",
     "**/*.egg-info/**",
-
     # Logs and Databases
     "**/*.log",
     "**/*.sqlite",
     "**/*.db",
-
     # OS Files
     "**/.DS_Store",
     "**/Thumbs.db",
-
     # Large Media Files
     "**/*.mp4",
     "**/*.mov",
@@ -60,11 +53,9 @@ DEFAULT_EXCLUDE_PATTERNS = {
     "**/*.tar",
     "**/*.gz",
     "**/*.rar",
-
     # Documentation Build
     "**/docs/_build/**",
     "**/site/**",
-
     # Temporary Files
     "**/tmp/**",
     "**/temp/**",

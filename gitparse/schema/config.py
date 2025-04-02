@@ -14,23 +14,12 @@ class ExtractionConfig(BaseModel):
         temp_dir (Optional[str]): Directory for temporary files (e.g., cloned repos)
     """
 
-    max_file_size: int = Field(
-        default=10 * 1024 * 1024,
-        description="Maximum file size in bytes"
-    )
+    max_file_size: int = Field(default=10 * 1024 * 1024, description="Maximum file size in bytes")
     exclude_patterns: List[str] = Field(
-        default_factory=list,
-        description="Glob patterns to exclude"
+        default_factory=list, description="Glob patterns to exclude"
     )
     include_patterns: List[str] = Field(
-        default_factory=list,
-        description="Glob patterns to include"
+        default_factory=list, description="Glob patterns to include"
     )
-    output_style: str = Field(
-        default="flattened",
-        description="Output format style"
-    )
-    temp_dir: Optional[str] = Field(
-        default=None,
-        description="Directory for temporary files"
-    )
+    output_style: str = Field(default="flattened", description="Output format style")
+    temp_dir: Optional[str] = Field(default=None, description="Directory for temporary files")

@@ -1,1 +1,1 @@
-"""Core tests for GitParse.""" 
+"""Core tests for GitParse."""
