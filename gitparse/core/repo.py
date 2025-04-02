@@ -19,7 +19,7 @@ from typing import Any, Callable, Literal, Optional, Union
 from urllib.parse import urlparse
 
 import git
-import tomllib
+import tomli
 from git.exc import GitCommandError
 from packaging.requirements import InvalidRequirement, Requirement
 
@@ -434,7 +434,7 @@ class GitRepo:
             return {}
 
         try:
-            data = tomllib.loads(path.read_text())
+            data = tomli.loads(path.read_text())
         except Exception:
             logger.exception("Failed to parse pyproject.toml")
             return {"dependencies": {}, "dev-dependencies": {}}
