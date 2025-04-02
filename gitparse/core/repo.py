@@ -1,8 +1,11 @@
 """Core repository handling module."""
+
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import json
+import logging
 import mimetypes
 import os
 import shutil
@@ -10,11 +13,13 @@ import stat
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 from urllib.parse import urlparse
 
 import git
+import tomllib
 from git.exc import GitCommandError
 from packaging.requirements import InvalidRequirement, Requirement
 
@@ -25,26 +30,32 @@ try:
 except ImportError:
     HAS_MAGIC = False
 
-from datetime import datetime
-
-# Handle TOML parsing for different Python versions
-import tomllib as toml_parser
-
-from gitparse.schema.config import ExtractionConfig, DependencyConfig, DependencyGroup
+from gitparse.schema.config import ExtractionConfig
 from gitparse.vars.exclude_patterns import DEFAULT_EXCLUDE_PATTERNS
 from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class GitError(Exception):
     """Custom exception class for Git-related errors."""
 
-    pass
 
+def _remove_readonly(
+    func: Callable[[str], None],
+    path: str,
+    _excinfo: Any,  # Unused but required by rmtree
+) -> None:
+    """Error handler for shutil.rmtree to handle readonly files.
 
-def _remove_readonly(func, path, excinfo):
-    """Error handler for shutil.rmtree to handle readonly files."""
+    Args:
+        func: The function that failed
+        path: The path that caused the error
+        _excinfo: Exception info (unused)
+    """
     # Make the file writable and try again
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 
@@ -82,6 +93,23 @@ class GitRepo:
         if self._is_remote:
             self._clone_repository()
 
+    def _validate_path(self, path: Path, is_dir: bool = True) -> None:
+        """Validate that a path exists and is of the correct type.
+
+        Args:
+            path: Path to validate
+            is_dir: Whether the path should be a directory
+
+        Raises:
+            ValueError: If path validation fails
+        """
+        if not path.exists():
+            msg = f"Path does not exist: {path}"
+            raise ValueError(msg)
+        if is_dir and not path.is_dir():
+            msg = f"Path is not a directory: {path}"
+            raise ValueError(msg)
+
     def _setup_repo_path(self) -> None:
         """Initialize repository path from source."""
         # Convert source to string if it's a Path object
@@ -99,18 +127,18 @@ class GitRepo:
                 self._temp_dir = Path(tempfile.mkdtemp())
         else:
             # Local path
-            self._repo_path = Path(source_str).resolve()
-            if not self._repo_path.exists():
-                raise ValueError(f"Repository path does not exist: {self._repo_path}")
-            if not self._repo_path.is_dir():
-                raise ValueError(f"Repository path is not a directory: {self._repo_path}")
-
-            # Try to load as Git repo
             try:
-                self._git_repo = git.Repo(self._repo_path)
-            except (git.InvalidGitRepositoryError, git.NoSuchPathError):
-                # Not a Git repo, but that's okay for local directories
-                pass
+                repo_path = Path(source_str).resolve()
+                self._validate_path(repo_path)
+            except ValueError as e:
+                logger.exception("Failed to resolve repository path")
+                msg = f"Invalid repository path: {e}"
+                raise ValueError(msg) from e
+            else:
+                self._repo_path = repo_path
+                # Try to load as Git repo
+                with contextlib.suppress(git.InvalidGitRepositoryError, git.NoSuchPathError):
+                    self._git_repo = git.Repo(self._repo_path)
 
     def _clone_repository(self) -> None:
         """Clone remote repository to temporary directory."""
@@ -127,13 +155,17 @@ class GitRepo:
                 origin.pull()
             else:
                 self._git_repo = git.Repo.clone_from(self.source, self._temp_dir)
-
-            self._repo_path = self._temp_dir
         except GitCommandError as err:
-            raise GitError(f"Failed to clone repository: {err}") from err
+            msg = f"Failed to clone repository: {err}"
+            raise GitError(msg) from err
+        else:
+            self._repo_path = self._temp_dir
 
     def _save_output(
-        self, data: Any, output_file: Optional[Union[str, Path]] = None, prefix: str = ""
+        self,
+        data: Any,
+        output_file: Optional[Union[str, Path]] = None,
+        prefix: str = "",
     ) -> None:
         """Save data to a file if output_file is specified."""
         if not output_file:
@@ -141,7 +173,7 @@ class GitRepo:
 
         # Handle auto-generated filenames
         if output_file == "auto":
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             repo_name = self._repo_path.name if self._repo_path else "unknown"
             output_file = f"{prefix}_{repo_name}_{timestamp}.json"
 
@@ -156,7 +188,7 @@ class GitRepo:
             else:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def get_repository_info(self, output_file: Optional[Union[str, Path]] = None) -> Dict[str, str]:
+    def get_repository_info(self, output_file: Optional[Union[str, Path]] = None) -> dict[str, str]:
         """Get basic information about the Git repository.
 
         Args:
@@ -190,13 +222,13 @@ class GitRepo:
                 info["remotes"] = [r.name for r in self._git_repo.remotes]
             except (AttributeError, TypeError):
                 info["remotes"] = []
-
-            self._save_output(info, output_file, "repo_info")
-            return info
+            else:
+                self._save_output(info, output_file, "repo_info")
+                return info
         except (git.InvalidGitRepositoryError, git.NoSuchPathError, AttributeError):
             return {"name": self._repo_path.name if self._repo_path else "unknown"}
 
-    def get_repo_info(self, output_file: Optional[Union[str, Path]] = None) -> Dict[str, str]:
+    def get_repo_info(self, output_file: Optional[Union[str, Path]] = None) -> dict[str, str]:
         """Alias for get_repository_info."""
         return self.get_repository_info(output_file)
 
@@ -215,7 +247,7 @@ class GitRepo:
 
         return True
 
-    def _walk_directory(self, start_path: Path) -> List[Path]:
+    def _walk_directory(self, start_path: Path) -> list[Path]:
         """Walk directory and return filtered list of files."""
         files = []
 
@@ -234,11 +266,11 @@ class GitRepo:
 
         return sorted(files)
 
-    def _format_tree_flattened(self, files: List[Path]) -> List[str]:
+    def _format_tree_flattened(self, files: list[Path]) -> list[str]:
         """Format files as a flat list of relative paths."""
         return [str(f.relative_to(self._repo_path)) for f in files]
 
-    def _format_tree_markdown(self, files: List[Path]) -> List[str]:
+    def _format_tree_markdown(self, files: list[Path]) -> list[str]:
         """Format file tree in markdown style."""
         tree = []
         for file in sorted(files):
@@ -247,7 +279,7 @@ class GitRepo:
             tree.append(f"{indent}- {rel_path.name}")
         return tree
 
-    def _format_tree_structured(self, files: List[Path]) -> Dict:
+    def _format_tree_structured(self, files: list[Path]) -> dict:
         """Format file tree as nested dictionary."""
         tree = {}
         for file in sorted(files):
@@ -262,7 +294,7 @@ class GitRepo:
         self,
         style: Literal["flattened", "markdown", "structured", "dict"] = "flattened",
         output_file: Optional[Union[str, Path]] = None,
-    ) -> Union[List[str], Dict]:
+    ) -> Union[list[str], dict]:
         """Get repository file tree in specified format.
 
         Args:
@@ -273,7 +305,8 @@ class GitRepo:
             List of files or structured dictionary
         """
         if not self._repo_path:
-            raise RuntimeError("Repository path not initialized")
+            msg = "Repository path not initialized"
+            raise RuntimeError(msg)
 
         # Get filtered list of files
         files = self._walk_directory(self._repo_path)
@@ -286,7 +319,8 @@ class GitRepo:
         elif style in ("structured", "dict"):  # Handle dict as alias for structured
             result = self._format_tree_structured(files)
         else:
-            raise ValueError(f"Unsupported tree style: {style}")
+            msg = f"Unsupported tree style: {style}"
+            raise ValueError(msg)
 
         self._save_output(result, output_file, "file_tree")
         return result
@@ -298,7 +332,8 @@ class GitRepo:
             Optional[str]: Content of README.md or None if not found
         """
         if not self._repo_path:
-            raise RuntimeError("Repository path not initialized")
+            msg = "Repository path not initialized"
+            raise RuntimeError(msg)
 
         # Common README filenames to check
         readme_names = ["README.md", "Readme.md", "readme.md", "README", "README.rst"]
@@ -337,97 +372,141 @@ class GitRepo:
                         return content
         return None
 
-    def _parse_requirements_txt(self, path: Path) -> List[Dict[str, str]]:
+    def _parse_requirements_txt(self, path: Path) -> list[dict[str, str]]:
         """Parse a requirements.txt file."""
         if not path.exists():
             return []
 
         requirements = []
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
+        try:
+            lines = path.read_text().splitlines()
+        except Exception:
+            logger.exception("Failed to read requirements file")
+            return []
+
+        for line in lines:
+            stripped_line = line.strip()
+            if not stripped_line or stripped_line.startswith("#"):
                 continue
 
             try:
-                req = Requirement(line)
+                req = Requirement(stripped_line)
+            except InvalidRequirement:
+                logger.warning("Invalid requirement found: %s", stripped_line)
+                continue
+            else:
                 requirements.append(
                     {
                         "name": req.name,
                         "specifier": str(req.specifier) if req.specifier else "",
                         "extras": sorted(req.extras) if req.extras else [],
                         "url": req.url if hasattr(req, "url") else None,
-                    }
+                    },
                 )
-            except InvalidRequirement:
-                # Skip invalid requirements
-                continue
 
         return requirements
 
-    def _parse_poetry_toml(self, path: Path) -> Dict[str, Dict[str, str]]:
+    def _parse_poetry_dependencies(
+        self,
+        deps_dict: dict[str, Any],
+    ) -> dict[str, str]:
+        """Parse Poetry dependencies section.
+
+        Args:
+            deps_dict: Dictionary containing dependencies
+
+        Returns:
+            Dictionary mapping package names to version specs
+        """
+        result = {}
+        for name, spec in deps_dict.items():
+            if name == "python":
+                continue
+            if isinstance(spec, str):
+                result[name] = spec
+            elif isinstance(spec, dict):
+                result[name] = spec.get("version", "")
+        return result
+
+    def _parse_poetry_toml(self, path: Path) -> dict[str, dict[str, str]]:
         """Parse a pyproject.toml file with Poetry dependencies."""
         if not path.exists():
             return {}
 
         try:
-            data = toml_parser.loads(path.read_text())
-            deps: Dict[str, Dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
-
-            # Main dependencies
-            if "tool" in data and "poetry" in data["tool"]:
-                poetry = data["tool"]["poetry"]
-                if "dependencies" in poetry:
-                    for name, spec in poetry["dependencies"].items():
-                        if name == "python":
-                            continue
-                        if isinstance(spec, str):
-                            deps["dependencies"][name] = spec
-                        elif isinstance(spec, dict):
-                            deps["dependencies"][name] = spec.get("version", "")
-
-                # Dev dependencies
-                if "group" in poetry and "dev" in poetry["group"]:
-                    dev = poetry["group"]["dev"]
-                    if "dependencies" in dev:
-                        for name, spec in dev["dependencies"].items():
-                            if isinstance(spec, str):
-                                deps["dev-dependencies"][name] = spec
-                            elif isinstance(spec, dict):
-                                deps["dev-dependencies"][name] = spec.get("version", "")
-
-            return deps
+            data = tomllib.loads(path.read_text())
         except Exception:
-            return {}
+            logger.exception("Failed to parse pyproject.toml")
+            return {"dependencies": {}, "dev-dependencies": {}}
 
-    def _parse_package_json(self, path: Path) -> Dict[str, List[Dict[str, str]]]:
+        deps: dict[str, dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
+
+        if "tool" not in data or "poetry" not in data["tool"]:
+            return deps
+
+        poetry = data["tool"]["poetry"]
+
+        # Main dependencies
+        if "dependencies" in poetry:
+            try:
+                deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
+            except Exception:
+                logger.exception("Failed to parse main dependencies")
+
+        # Dev dependencies
+        if "group" in poetry and "dev" in poetry["group"]:
+            dev = poetry["group"]["dev"]
+            if "dependencies" in dev:
+                try:
+                    deps["dev-dependencies"] = self._parse_poetry_dependencies(dev["dependencies"])
+                except Exception:
+                    logger.exception("Failed to parse dev dependencies")
+
+        return deps
+
+    def _parse_package_json(self, path: Path) -> dict[str, list[dict[str, str]]]:
         """Parse a package.json file."""
         if not path.exists():
             return {}
 
         try:
             data = json.loads(path.read_text())
-            deps: Dict[str, List[Dict[str, str]]] = {"dependencies": [], "devDependencies": []}
-
-            # Regular dependencies
-            if "dependencies" in data:
-                for name, version in data["dependencies"].items():
-                    deps["dependencies"].append({"name": name, "version": version})
-
-            # Dev dependencies
-            if "devDependencies" in data:
-                for name, version in data["devDependencies"].items():
-                    deps["devDependencies"].append({"name": name, "version": version})
-
-            return deps
         except Exception:
-            return {}
+            logger.exception("Failed to parse package.json")
+            return {"dependencies": [], "devDependencies": []}
+
+        deps: dict[str, list[dict[str, str]]] = {"dependencies": [], "devDependencies": []}
+
+        # Regular dependencies
+        if "dependencies" in data:
+            try:
+                deps["dependencies"].extend(
+                    {"name": name, "version": version}
+                    for name, version in data["dependencies"].items()
+                )
+            except Exception:
+                logger.exception("Failed to parse dependencies")
+
+        # Dev dependencies
+        if "devDependencies" in data:
+            try:
+                deps["devDependencies"].extend(
+                    {"name": name, "version": version}
+                    for name, version in data["devDependencies"].items()
+                )
+            except Exception:
+                logger.exception("Failed to parse devDependencies")
+
+        return deps
 
     def get_dependencies(
-        self, output_file: Optional[str] = None, config: Optional[ExtractionConfig] = None
-    ) -> Dict[str, Union[List[str], Dict[str, str]]]:
+        self,
+        output_file: Optional[str] = None,
+    ) -> dict[str, Union[list[str], dict[str, str]]]:
         """Get repository dependencies from package files."""
         if not self._repo_path:
-            raise GitError("Repository not initialized")
+            msg = "Repository not initialized"
+            raise GitError(msg)
 
         dependencies = {
             "requirements.txt": [],
@@ -438,15 +517,24 @@ class GitRepo:
         # Process each package file if it exists
         req_txt = self._repo_path / "requirements.txt"
         if req_txt.exists():
-            dependencies["requirements.txt"] = self._parse_requirements_txt(req_txt)
+            try:
+                dependencies["requirements.txt"] = self._parse_requirements_txt(req_txt)
+            except Exception:
+                logger.exception("Failed to parse requirements.txt")
 
         pyproject = self._repo_path / "pyproject.toml"
         if pyproject.exists():
-            dependencies["pyproject.toml"] = self._parse_poetry_toml(pyproject)
+            try:
+                dependencies["pyproject.toml"] = self._parse_poetry_toml(pyproject)
+            except Exception:
+                logger.exception("Failed to parse pyproject.toml")
 
         package_json = self._repo_path / "package.json"
         if package_json.exists():
-            dependencies["package.json"] = self._parse_package_json(package_json)
+            try:
+                dependencies["package.json"] = self._parse_package_json(package_json)
+            except Exception:
+                logger.exception("Failed to parse package.json")
 
         self._save_output(dependencies, output_file, "dependencies")
         return dependencies
@@ -467,33 +555,47 @@ class GitRepo:
 
             # Remove the directory with error handler for readonly files
             shutil.rmtree(self._temp_dir, onerror=_remove_readonly)
-        except Exception as e:
-            # Log error but don't raise - this is cleanup code
-            print(f"Warning: Failed to cleanup temporary directory: {e}", file=sys.stderr)
+        except Exception:
+            logger.exception("Failed to cleanup temporary directory")
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup temporary directory if it exists."""
         self._cleanup_temp_dir()
 
-    def _get_file_type(self, path: Path) -> str:
-        """Get MIME type of a file."""
+    def _get_file_type(self, path: Path) -> tuple[str, bool]:
+        """Get MIME type and binary flag for a file.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            Tuple of (mime_type, is_binary)
+        """
         # First try by extension
         mime_type, _ = mimetypes.guess_type(str(path))
         if mime_type:
-            return mime_type
+            return mime_type, not mime_type.startswith("text/")
 
         # Then try python-magic if available
         if HAS_MAGIC:
             try:
-                return magic.from_file(str(path), mime=True)
+                mime_type = magic.from_file(str(path), mime=True)
             except Exception:
-                pass
+                logger.exception("Failed to get file type with magic")
+            else:
+                return mime_type, not mime_type.startswith(
+                    ("text/", "application/json", "application/xml", "application/x-yaml"),
+                )
 
-        # Fallback to basic type mapping
-        ext = path.suffix.lower()
-        if ext in COMMON_EXTENSIONS:
-            return COMMON_EXTENSIONS[ext]
-        return "application/octet-stream"
+        # Fallback to basic binary check
+        try:
+            with path.open("rb") as f:
+                chunk = f.read(1024)  # Read first 1KB
+                is_binary = b"\0" in chunk
+                return "application/octet-stream" if is_binary else "text/plain", is_binary
+        except Exception:
+            logger.exception("Failed to check file type")
+            return "application/octet-stream", True
 
     def _map_mime_to_language(self, mime_type: str) -> str:
         """Map MIME type to programming language name."""
@@ -509,31 +611,40 @@ class GitRepo:
         return "Other"
 
     def get_language_stats(
-        self, output_file: Optional[str] = None
-    ) -> Dict[str, Dict[str, Union[int, float]]]:
+        self,
+        output_file: Optional[str] = None,
+    ) -> dict[str, dict[str, Union[int, float]]]:
         """Get language statistics for the repository."""
         if not self._repo_path:
-            raise GitError("Repository not initialized")
+            msg = "Repository not initialized"
+            raise GitError(msg)
 
-        stats: Dict[str, Dict[str, Union[int, float]]] = {}
+        stats: dict[str, dict[str, Union[int, float]]] = {}
         total_bytes = 0
         total_files = 0
 
-        for file_path in self._walk_directory(self._repo_path):
-            mime_type, is_binary = self._get_file_type(file_path)
-            if is_binary:
-                continue
+        # Pre-process files to minimize try-except overhead
+        valid_files = []
+        for path in self._walk_directory(self._repo_path):
+            mime_type, is_binary = self._get_file_type(path)
+            if not is_binary:
+                valid_files.append((path, mime_type))
 
-            language = self._map_mime_to_language(mime_type)
-            size = file_path.stat().st_size
+        # Process valid files in a single try-except block
+        try:
+            for path, mime_type in valid_files:
+                language = self._map_mime_to_language(mime_type)
+                size = path.stat().st_size
 
-            if language not in stats:
-                stats[language] = {"files": 0, "bytes": 0}
+                if language not in stats:
+                    stats[language] = {"files": 0, "bytes": 0}
 
-            stats[language]["files"] += 1
-            stats[language]["bytes"] += size
-            total_bytes += size
-            total_files += 1
+                stats[language]["files"] += 1
+                stats[language]["bytes"] += size
+                total_bytes += size
+                total_files += 1
+        except Exception:
+            logger.exception("Failed to process files for language statistics")
 
         # Calculate percentages
         if total_bytes > 0:
@@ -544,17 +655,14 @@ class GitRepo:
         self._save_output(stats, output_file, "language_stats")
         return stats
 
-    def get_statistics(self, output_file: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
-        """Get overall repository statistics.
-
-        Args:
-            output_file: Optional path to save results. Use "auto" for auto-generated filename.
-
-        Returns:
-            Dict with various repository statistics
-        """
+    def get_statistics(
+        self,
+        output_file: Optional[Union[str, Path]] = None,
+    ) -> dict[str, Any]:
+        """Get overall repository statistics."""
         if not self._repo_path:
-            raise RuntimeError("Repository path not initialized")
+            msg = "Repository path not initialized"
+            raise RuntimeError(msg)
 
         stats = {
             "total_files": 0,
@@ -566,16 +674,24 @@ class GitRepo:
             "language_breakdown": self.get_language_stats(),
         }
 
-        # Process all files
+        # Pre-process files to minimize try-except overhead
         files = self._walk_directory(self._repo_path)
-        for file_path in files:
-            # Update counters
-            stats["total_files"] += 1
-            size = file_path.stat().st_size
-            stats["total_size"] += size
+        file_info = []
 
-            # Check if binary
-            _, is_binary = self._get_file_type(file_path)
+        # Collect all file info in a single try block
+        try:
+            for file_path in files:
+                size = file_path.stat().st_size
+                is_binary = self._is_binary_file(file_path)
+                file_info.append((file_path, size, is_binary))
+        except Exception:
+            logger.exception("Failed to process files")
+            return stats
+
+        # Process collected stats without try-except
+        for _, size, is_binary in file_info:
+            stats["total_files"] += 1
+            stats["total_size"] += size
             if is_binary:
                 stats["binary_files"] += 1
             else:
@@ -589,72 +705,76 @@ class GitRepo:
         self._save_output(stats, output_file, "statistics")
         return stats
 
-    def get_repo_stats(self, output_file: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
-        """Get repository statistics including file counts, sizes, and types.
-
-        Args:
-            output_file: Optional path to save results. Use "auto" for auto-generated filename.
-
-        Returns:
-            Dictionary containing repository statistics
-        """
+    def get_repo_stats(
+        self,
+        output_file: Optional[Union[str, Path]] = None,
+    ) -> dict[str, Any]:
+        """Get repository statistics including file counts, sizes, and types."""
         if not self._repo_path:
             return {}
 
+        # Initialize stats
+        stats = {
+            "total_files": 0,
+            "total_size": 0,
+            "binary_count": 0,
+            "file_types": {},
+            "largest_files": [],
+        }
+
+        # Pre-process files to minimize try-except overhead
         files = self._walk_directory(self._repo_path)
-        total_size = 0
-        binary_count = 0
-        file_types: Dict[str, int] = {}
-        largest_files = []
+        file_info = []
 
-        for file in files:
-            # Get file size
-            size = file.stat().st_size
-            total_size += size
+        # Collect all file info in a single try block
+        try:
+            for file_path in files:
+                size = file_path.stat().st_size
+                ext = file_path.suffix.lower()
+                is_binary = self._is_binary_file(file_path)
+                rel_path = str(file_path.relative_to(self._repo_path))
+                file_info.append((size, ext, is_binary, rel_path))
+        except Exception:
+            logger.exception("Failed to process files")
+            return stats
 
-            # Track file type
-            ext = file.suffix.lower()
+        # Process collected info without try-except
+        for size, ext, is_binary, rel_path in file_info:
+            stats["total_size"] += size
+            stats["total_files"] += 1
+
             if ext:
-                file_types[ext] = file_types.get(ext, 0) + 1
+                stats["file_types"][ext] = stats["file_types"].get(ext, 0) + 1
+            if is_binary:
+                stats["binary_count"] += 1
 
-            # Check if binary
-            if self._is_binary_file(file):
-                binary_count += 1
+            stats["largest_files"].append({"path": rel_path, "size": size})
 
-            # Track largest files
-            largest_files.append({"path": str(file.relative_to(self._repo_path)), "size": size})
+        # Post-process stats
+        if stats["total_files"] > 0:
+            stats["average_file_size"] = stats["total_size"] / stats["total_files"]
+            stats["binary_ratio"] = stats["binary_count"] / stats["total_files"]
+        else:
+            stats["average_file_size"] = 0
+            stats["binary_ratio"] = 0
 
         # Sort and limit largest files
-        largest_files.sort(key=lambda x: x["size"], reverse=True)
-        largest_files = largest_files[:10]  # Keep top 10
-
-        stats = {
-            "total_files": len(files),
-            "total_size": total_size,
-            "average_file_size": total_size / len(files) if files else 0,
-            "binary_ratio": binary_count / len(files) if files else 0,
-            "file_types": file_types,
-            "largest_files": largest_files,
-        }
+        stats["largest_files"].sort(key=lambda x: x["size"], reverse=True)
+        stats["largest_files"] = stats["largest_files"][:10]  # Keep top 10
 
         self._save_output(stats, output_file, "repo_stats")
         return stats
 
     def get_file_content(
-        self, file_path: str, output_file: Optional[str] = None, encoding: str = "utf-8"
+        self,
+        file_path: str,
+        output_file: Optional[str] = None,
+        encoding: str = "utf-8",
     ) -> Optional[str]:
-        """Get content of a specific file from the repository.
-
-        Args:
-            file_path: Path to the file relative to repository root
-            output_file: Optional file to save the content to
-            encoding: File encoding to use
-
-        Returns:
-            File content as string or None if file not found/readable
-        """
+        """Get content of a specific file from the repository."""
         if not self._repo_path:
-            raise RuntimeError("Repository path not initialized")
+            msg = "Repository path not initialized"
+            raise RuntimeError(msg)
 
         full_path = self._repo_path / Path(file_path)
         if not full_path.exists() or not full_path.is_file():
@@ -667,24 +787,36 @@ class GitRepo:
 
         try:
             content = full_path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            logger.warning("Failed to decode file as %s: %s", encoding, file_path)
+            return None
+        else:
             self._save_output(content, output_file, f"content_{Path(file_path).name}")
             return content
-        except UnicodeDecodeError:
-            return None
 
     def get_all_contents(
         self,
         max_file_size: Optional[int] = None,
-        exclude_patterns: Optional[List[str]] = None,
+        exclude_patterns: Optional[list[str]] = None,
         output_file: Optional[str] = None,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Get contents of all text files in the repository."""
         if not self._repo_path:
-            raise GitError("Repository not initialized")
+            msg = "Repository not initialized"
+            raise GitError(msg)
 
         contents = {}
         files = self._walk_directory(self._repo_path)
 
+        # Pre-compile exclude patterns for better performance
+        compiled_patterns = None
+        if exclude_patterns:
+            compiled_patterns = [fnmatch.translate(p) for p in exclude_patterns]
+
+        # Pre-process files to minimize try-except overhead
+        valid_files = []
+
+        # First pass: validate files
         for file_path in files:
             # Skip if file is too large
             size_limit = max_file_size or self.config.max_file_size
@@ -693,15 +825,21 @@ class GitRepo:
 
             # Skip if file matches any exclude pattern
             rel_path = str(file_path.relative_to(self._repo_path))
-            if exclude_patterns and any(
-                fnmatch.fnmatch(rel_path, pattern) for pattern in exclude_patterns
+            if compiled_patterns and any(
+                fnmatch.fnmatch(rel_path, pattern) for pattern in compiled_patterns
             ):
                 continue
 
-            # Try to read content
-            content = self.get_file_content(rel_path)
-            if content is not None:
-                contents[rel_path] = content
+            valid_files.append(rel_path)
+
+        # Second pass: read file contents
+        try:
+            for rel_path in valid_files:
+                content = self.get_file_content(rel_path)
+                if content is not None:
+                    contents[rel_path] = content
+        except Exception:
+            logger.exception("Failed to read files")
 
         self._save_output(contents, output_file, "all_contents")
         return contents
@@ -711,14 +849,16 @@ class GitRepo:
         directory: str,
         style: Literal["flattened", "markdown", "structured"] = "flattened",
         output_file: Optional[str] = None,
-    ) -> Union[List[str], Dict]:
+    ) -> Union[list[str], dict]:
         """Get file tree for a specific directory."""
         if not self._repo_path:
-            raise GitError("Repository not initialized")
+            msg = "Repository not initialized"
+            raise GitError(msg)
 
         dir_path = self._repo_path / directory
         if not dir_path.is_dir():
-            raise GitError(f"Directory not found: {directory}")
+            msg = f"Directory not found: {directory}"
+            raise GitError(msg)
 
         files = self._walk_directory(dir_path)
 
@@ -733,37 +873,39 @@ class GitRepo:
         return result
 
     def get_directory_contents(
-        self, directory: str, output_file: Optional[str] = None
-    ) -> Dict[str, str]:
+        self,
+        directory: str,
+        output_file: Optional[str] = None,
+    ) -> dict[str, str]:
         """Get contents of all files in a directory."""
         if not self._repo_path:
-            raise GitError("Repository not initialized")
+            msg = "Repository not initialized"
+            raise GitError(msg)
 
         dir_path = self._repo_path / directory
         if not dir_path.is_dir():
-            raise GitError(f"Directory not found: {directory}")
+            msg = f"Directory not found: {directory}"
+            raise GitError(msg)
 
         contents = {}
-        for file_path in self._walk_directory(dir_path):
-            try:
+        files = list(self._walk_directory(dir_path))  # Convert to list to avoid multiple iterations
+
+        # Process all files in a single try block
+        try:
+            for file_path in files:
                 content = file_path.read_text(encoding="utf-8")
                 rel_path = str(file_path.relative_to(dir_path))
                 contents[rel_path] = content
-            except UnicodeDecodeError:
-                continue
+        except UnicodeDecodeError as e:
+            logger.warning("Failed to decode file: %s", e)
+        except Exception:
+            logger.exception("Failed to process files")
 
         self._save_output(contents, output_file, "dir_contents")
         return contents
 
     def _is_binary_file(self, path: Path) -> bool:
-        """Check if a file is binary.
-
-        Args:
-            path: Path to the file to check
-
-        Returns:
-            True if file is binary, False otherwise
-        """
+        """Check if a file is binary."""
         # First check extension
         ext = path.suffix.lower()
         if ext in {
@@ -789,17 +931,16 @@ class GitRepo:
             try:
                 mime = magic.from_file(str(path), mime=True)
                 return not mime.startswith(
-                    ("text/", "application/json", "application/xml", "application/x-yaml")
+                    ("text/", "application/json", "application/xml", "application/x-yaml"),
                 )
             except Exception:
-                pass
+                logger.exception("Failed to check file type with magic")
 
         # Fallback: try reading as text
         try:
-            with path.open("r", encoding="utf-8") as f:
-                f.read(1024)  # Read first 1KB
-            return False
-        except UnicodeDecodeError:
-            return True
+            with path.open("rb") as f:
+                chunk = f.read(1024)  # Read first 1KB
+                return b"\0" in chunk
         except Exception:
+            logger.exception("Failed to check if file is binary")
             return False

@@ -1,1 +1,1 @@
-"""Schema package for GitParse.""" 
+"""Schema package for GitParse."""

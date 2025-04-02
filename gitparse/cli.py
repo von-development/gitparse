@@ -1,10 +1,13 @@
 """Command line interface for GitParse."""
 
+from __future__ import annotations
+
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 
 from colorama import Fore, Style, init
 from rich.console import Console
@@ -12,12 +15,16 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
 
 from gitparse import GitRepo
+from gitparse.core.exceptions import GitParseError
 
 # Initialize colorama for Windows support
 init()
 
 # Create rich console for fancy output
 console = Console()
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 def format_error(msg: str) -> str:
@@ -36,31 +43,37 @@ def format_info(msg: str) -> str:
 
 
 def save_output(data: Any, output_file: Optional[str] = None, pretty: bool = True) -> None:
-    """Save output to a file or print to console with proper formatting."""
+    """Save output to a file or print to console with proper formatting.
+
+    Args:
+        data: The data to save or print
+        output_file: Optional file path to save the output to
+        pretty: Whether to use pretty formatting
+    """
     if output_file:
-        with open(output_file, "w") as f:
+        output_path = Path(output_file)
+        with output_path.open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2 if pretty else None)
         console.print(f"[green]Output saved to {output_file}[/green]")
-    else:
-        if isinstance(data, (dict, list)):
-            if pretty:
-                console.print_json(data=data)
-            else:
-                print(json.dumps(data))
-        elif isinstance(data, str) and data.startswith("```") and data.endswith("```"):
-            # Handle markdown code blocks
-            lang = data.split("\n")[0][3:].strip()
-            code = "\n".join(data.split("\n")[1:-1])
-            syntax = Syntax(code, lang, theme="monokai")
-            console.print(syntax)
+    elif isinstance(data, (dict, list)):
+        if pretty:
+            console.print_json(data=data)
         else:
-            print(data)
+            console.print(json.dumps(data))
+    elif isinstance(data, str) and data.startswith("```") and data.endswith("```"):
+        # Handle markdown code blocks
+        lang = data.split("\n")[0][3:].strip()
+        code = "\n".join(data.split("\n")[1:-1])
+        syntax = Syntax(code, lang, theme="monokai")
+        console.print(syntax)
+    else:
+        console.print(str(data))
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for the CLI."""
     parser = argparse.ArgumentParser(
-        description=format_info("GitParse - Extract and analyze Git repositories")
+        description=format_info("GitParse - Extract and analyze Git repositories"),
     )
 
     parser.add_argument(
@@ -86,7 +99,7 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Info command
-    info_parser = subparsers.add_parser("info", help=format_info("Get repository information"))
+    subparsers.add_parser("info", help=format_info("Get repository information"))
 
     # Tree commands
     tree_parser = subparsers.add_parser("tree", help=format_info("Get repository file tree"))
@@ -111,16 +124,15 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Content commands
     dir_contents_parser = subparsers.add_parser(
-        "dir-contents", help=format_info("Get directory contents")
+        "dir-contents",
+        help=format_info("Get directory contents"),
     )
     dir_contents_parser.add_argument(
         "directory",
         help="Directory path within repository",
     )
 
-    readme_parser = subparsers.add_parser(
-        "readme", help=format_info("Get repository README content")
-    )
+    subparsers.add_parser("readme", help=format_info("Get repository README content"))
 
     content_parser = subparsers.add_parser("content", help=format_info("Get file content"))
     content_parser.add_argument("path", help="Path to file within repository")
@@ -141,19 +153,60 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # Analysis commands
-    deps_parser = subparsers.add_parser("deps", help=format_info("Get repository dependencies"))
-
-    langs_parser = subparsers.add_parser(
-        "langs",
-        help=format_info("Get language statistics"),
-    )
-
-    stats_parser = subparsers.add_parser(
-        "stats",
-        help=format_info("Get repository statistics"),
-    )
+    subparsers.add_parser("deps", help=format_info("Get repository dependencies"))
+    subparsers.add_parser("langs", help=format_info("Get language statistics"))
+    subparsers.add_parser("stats", help=format_info("Get repository statistics"))
 
     return parser
+
+
+def get_command_handler(command: str) -> callable:
+    """Get the appropriate command handler function.
+
+    Args:
+        command: The command to get a handler for
+
+    Returns:
+        A function that handles the specified command
+    """
+    handlers = {
+        "info": lambda repo, _: repo.get_repository_info(),
+        "tree": lambda repo, args: repo.get_file_tree(style=args.style),
+        "dir-tree": lambda repo, args: repo.get_directory_tree(
+            directory=args.directory,
+            style=args.style,
+        ),
+        "dir-contents": lambda repo, args: repo.get_directory_contents(directory=args.directory),
+        "readme": lambda repo, _: repo.get_readme_content(),
+        "deps": lambda repo, _: repo.get_dependencies(),
+        "content": lambda repo, args: repo.get_file_content(args.path),
+        "all-contents": lambda repo, args: repo.get_all_contents(
+            max_file_size=args.max_size if hasattr(args, "max_size") else None,
+            exclude_patterns=args.exclude if hasattr(args, "exclude") else None,
+        ),
+        "langs": lambda repo, _: repo.get_language_stats(),
+        "stats": lambda repo, _: repo.get_repository_stats(),
+    }
+    return handlers.get(command)
+
+
+def execute_command(repo: GitRepo, args: argparse.Namespace) -> dict[str, Any] | str | None:
+    """Execute the requested command on the repository.
+
+    Args:
+        repo: The GitRepo instance to execute commands on
+        args: The parsed command line arguments
+
+    Returns:
+        The result of the command execution
+
+    Raises:
+        GitParseError: If there is an error executing the command
+    """
+    handler = get_command_handler(args.command)
+    if handler:
+        return handler(repo, args)
+    return None
 
 
 def main() -> None:
@@ -175,46 +228,21 @@ def main() -> None:
         try:
             repo = GitRepo(args.repo)
             progress.update(task, completed=True)
-        except Exception as e:
+        except GitParseError as e:
             progress.update(task, completed=True)
+            logger.exception("Failed to initialize repository")
             console.print(format_error(f"Failed to initialize repository: {e}"))
             sys.exit(1)
 
     # Execute command
     try:
-        result: Union[Dict, str, None] = None
-
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
             task = progress.add_task(f"[cyan]Executing {args.command} command...[/cyan]")
-
-            if args.command == "info":
-                result = repo.get_repository_info()
-            elif args.command == "tree":
-                result = repo.get_file_tree(style=args.style)
-            elif args.command == "dir-tree":
-                result = repo.get_directory_tree(directory=args.directory, style=args.style)
-            elif args.command == "dir-contents":
-                result = repo.get_directory_contents(directory=args.directory)
-            elif args.command == "readme":
-                result = repo.get_readme_content()
-            elif args.command == "deps":
-                result = repo.get_dependencies()
-            elif args.command == "content":
-                result = repo.get_file_content(args.path)
-            elif args.command == "all-contents":
-                result = repo.get_all_contents(
-                    max_file_size=args.max_size if hasattr(args, "max_size") else None,
-                    exclude_patterns=args.exclude if hasattr(args, "exclude") else None,
-                )
-            elif args.command == "langs":
-                result = repo.get_language_stats()
-            elif args.command == "stats":
-                result = repo.get_repository_stats()
-
+            result = execute_command(repo, args)
             progress.update(task, completed=True)
 
         if result is not None:
@@ -222,7 +250,8 @@ def main() -> None:
             if not args.output:
                 console.print(format_success("\nCommand completed successfully!"))
 
-    except Exception as e:
+    except GitParseError as e:
+        logger.exception("Error executing command")
         console.print(format_error(f"Error executing command: {e}"))
         sys.exit(1)
 

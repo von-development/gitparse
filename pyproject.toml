@@ -72,8 +72,6 @@ ruff = "^0.1.0"
 [tool.ruff]
 line-length = 130
 target-version = "py38"
-
-# Exclude files and directories from ruff checks
 exclude = [
     ".git",
     ".venv",
@@ -88,36 +86,52 @@ exclude = [
 [tool.ruff.lint]
 # Enable all rules by default
 select = ["ALL"]
-# Ignore specific rules
 ignore = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "N",  # pep8-naming
-    "B",  # flake8-bugbear
-    "UP", # pyupgrade
-    "D",  # pydocstyle
-    "ANN", # flake8-annotations
+    "D203",  # one-blank-line-before-class
+    "D213",  # multi-line-summary-second-line
+    "ANN101",  # Missing type annotation for self in method
+    "ANN102",  # Missing type annotation for cls in classmethod
+    "ANN002",  # Missing type annotation for *args
+    "ANN003",  # Missing type annotation for **kwargs
+    "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed
+    "FBT001",  # Boolean positional arg in function definition
+    "FBT002",  # Boolean default value in function definition
+    "D100",   # Missing docstring in public module
+    "D104",   # Missing docstring in public package
+    "D107",   # Missing docstring in __init__
+    "D406",   # Section name should end with a newline
+    "D407",   # Missing dashed underline after section
+    "D413",   # Missing blank line after last section
+    "UP007",  # Use X | Y for type annotations (Python 3.10+)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # Use of assert detected
+    "ANN201",  # Missing return type annotation for public function
+    "ANN001",  # Missing type annotation for function argument
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["gitparse"]
 
 [tool.black]
 line-length = 100
 target-version = ["py38"]
-# Exclude files and directories from black formatting
 exclude = '''
-(
+/(
     \.git
-    | \.venv
-    | build
-    | dist
-    | examples
-    | \.eggs
-    | \.mypy_cache
-    | \.pytest_cache
-    | \.ruff_cache
-    | \.tox
-)
+  | \.venv
+  | __pycache__
+  | build
+  | dist
+  | examples
+  | \.eggs
+  | \.tox
+)/
 '''
 
 [tool.mypy]
@@ -125,8 +139,14 @@ python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+disallow_incomplete_defs = true
 check_untyped_defs = true
-# Exclude files and directories from mypy checks
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
 exclude = [
     "examples/",
     "build/",
