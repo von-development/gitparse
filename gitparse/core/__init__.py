@@ -3,7 +3,7 @@
 from gitparse.core.exceptions import (
     DependencyError,
     DirectoryNotFoundError,
-    FileNotFoundError,
+    GitFileNotFoundError,
     GitParseError,
     InvalidRepositoryError,
     ParseError,
@@ -16,7 +16,7 @@ __all__ = [
     "GitParseError",
     "RepositoryNotFoundError",
     "InvalidRepositoryError",
-    "FileNotFoundError",
+    "GitFileNotFoundError",
     "DirectoryNotFoundError",
     "ParseError",
     "DependencyError",
