@@ -115,10 +115,19 @@ class GitRepo:
             return
 
         try:
-            self._git_repo = git.Repo.clone_from(self.source, self._temp_dir)
+            # Check if repo already exists
+            if (self._temp_dir / ".git").exists():
+                self._git_repo = git.Repo(self._temp_dir)
+                # Pull latest changes
+                origin = self._git_repo.remotes.origin
+                origin.fetch()
+                origin.pull()
+            else:
+                self._git_repo = git.Repo.clone_from(self.source, self._temp_dir)
+
             self._repo_path = self._temp_dir
         except GitCommandError as err:
-            raise GitError("Failed to clone repository") from err
+            raise GitError(f"Failed to clone repository: {err}") from err
 
     def _save_output(
         self, data: Any, output_file: Optional[Union[str, Path]] = None, prefix: str = ""

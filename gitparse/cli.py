@@ -68,14 +68,15 @@ def create_parser() -> argparse.ArgumentParser:
         help="Local path or GitHub URL of the repository",
         type=str,
     )
-    
+
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Output file path (default: print to console)",
         type=str,
         metavar="OUTPUT",
     )
-    
+
     parser.add_argument(
         "--no-pretty",
         help="Disable pretty printing",
@@ -85,16 +86,10 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Info command
-    info_parser = subparsers.add_parser(
-        "info", 
-        help=format_info("Get repository information")
-    )
+    info_parser = subparsers.add_parser("info", help=format_info("Get repository information"))
 
     # Tree commands
-    tree_parser = subparsers.add_parser(
-        "tree", 
-        help=format_info("Get repository file tree")
-    )
+    tree_parser = subparsers.add_parser("tree", help=format_info("Get repository file tree"))
     tree_parser.add_argument(
         "--style",
         choices=["flattened", "markdown", "dict"],
@@ -102,41 +97,51 @@ def create_parser() -> argparse.ArgumentParser:
         help="Output style format",
     )
 
-    dir_tree_parser = subparsers.add_parser(
-        "dir-tree", 
-        help=format_info("Get directory file tree")
+    dir_tree_parser = subparsers.add_parser("dir-tree", help=format_info("Get directory file tree"))
+    dir_tree_parser.add_argument(
+        "directory",
+        help="Directory path within repository",
+    )
+    dir_tree_parser.add_argument(
+        "--style",
+        choices=["flattened", "markdown", "dict"],
+        default="markdown",
+        help="Output style format",
     )
 
     # Content commands
     dir_contents_parser = subparsers.add_parser(
-        "dir-contents", 
-        help=format_info("Get directory contents")
+        "dir-contents", help=format_info("Get directory contents")
+    )
+    dir_contents_parser.add_argument(
+        "directory",
+        help="Directory path within repository",
     )
 
     readme_parser = subparsers.add_parser(
-        "readme", 
-        help=format_info("Get repository README content")
+        "readme", help=format_info("Get repository README content")
     )
 
-    content_parser = subparsers.add_parser(
-        "content", 
-        help=format_info("Get file content")
-    )
-    content_parser.add_argument(
-        "path", 
-        help="Path to file within repository"
-    )
+    content_parser = subparsers.add_parser("content", help=format_info("Get file content"))
+    content_parser.add_argument("path", help="Path to file within repository")
 
     all_contents_parser = subparsers.add_parser(
         "all-contents",
         help=format_info("Get all file contents"),
     )
+    all_contents_parser.add_argument(
+        "--max-size",
+        type=int,
+        help="Maximum file size in bytes",
+    )
+    all_contents_parser.add_argument(
+        "--exclude",
+        nargs="+",
+        help="Glob patterns to exclude",
+    )
 
     # Analysis commands
-    deps_parser = subparsers.add_parser(
-        "deps", 
-        help=format_info("Get repository dependencies")
-    )
+    deps_parser = subparsers.add_parser("deps", help=format_info("Get repository dependencies"))
 
     langs_parser = subparsers.add_parser(
         "langs",
@@ -166,9 +171,7 @@ def main() -> None:
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task(
-            f"[cyan]Initializing repository from {args.repo}...[/cyan]"
-        )
+        task = progress.add_task(f"[cyan]Initializing repository from {args.repo}...[/cyan]")
         try:
             repo = GitRepo(args.repo)
             progress.update(task, completed=True)
@@ -180,24 +183,22 @@ def main() -> None:
     # Execute command
     try:
         result: Union[Dict, str, None] = None
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            task = progress.add_task(
-                f"[cyan]Executing {args.command} command...[/cyan]"
-            )
-            
+            task = progress.add_task(f"[cyan]Executing {args.command} command...[/cyan]")
+
             if args.command == "info":
                 result = repo.get_repository_info()
             elif args.command == "tree":
                 result = repo.get_file_tree(style=args.style)
             elif args.command == "dir-tree":
-                result = repo.get_directory_tree()
+                result = repo.get_directory_tree(directory=args.directory, style=args.style)
             elif args.command == "dir-contents":
-                result = repo.get_directory_contents()
+                result = repo.get_directory_contents(directory=args.directory)
             elif args.command == "readme":
                 result = repo.get_readme_content()
             elif args.command == "deps":
@@ -205,12 +206,15 @@ def main() -> None:
             elif args.command == "content":
                 result = repo.get_file_content(args.path)
             elif args.command == "all-contents":
-                result = repo.get_all_contents()
+                result = repo.get_all_contents(
+                    max_file_size=args.max_size if hasattr(args, "max_size") else None,
+                    exclude_patterns=args.exclude if hasattr(args, "exclude") else None,
+                )
             elif args.command == "langs":
                 result = repo.get_language_stats()
             elif args.command == "stats":
                 result = repo.get_repository_stats()
-                
+
             progress.update(task, completed=True)
 
         if result is not None:
