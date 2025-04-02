@@ -55,6 +55,7 @@ tomli = "^2.0.0"
 packaging = "^23.0"
 colorama = "^0.4.0"
 aiofiles = "^24.0.0"
+rich = "^13.7.0"
 
 [tool.poetry.group.windows.dependencies]
 python-magic-bin = { version = "^0.4.0", platform = "win32" }
