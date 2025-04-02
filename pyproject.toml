@@ -69,13 +69,16 @@ black = "^23.7.0"
 ruff = "^0.0.284"
 
 [tool.ruff]
+line-length = 130
+target-version = "py38"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "B", "UP"]
 ignore = []
-line-length = 100
 
 [tool.black]
 line-length = 100
-target-version = ['py38']
+target-version = ["py38"]
 
 [tool.mypy]
 python_version = "3.8"

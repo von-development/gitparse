@@ -5,4 +5,4 @@ from gitparse.schema.config import ExtractionConfig
 
 __all__ = ["GitRepo", "ExtractionConfig"]
 
-__version__ = "0.1.0" 
+__version__ = "0.1.0"

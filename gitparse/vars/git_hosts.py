@@ -26,7 +26,7 @@ GIT_HOSTS = {
         'web_url': 'https://bitbucket.org/{user}/{repo}',
         'api_version': '2.0',
     },
-    
+
     # Self-hosted Options
     'gitea': {
         'domain': None,  # Set by user
@@ -44,7 +44,7 @@ GIT_HOSTS = {
         'web_url': '{host}/{user}/{repo}',
         'api_version': 'v1',
     },
-    
+
     # Default SSH Settings
     'ssh': {
         'port': 22,
@@ -52,7 +52,7 @@ GIT_HOSTS = {
         'identity_file': '~/.ssh/id_rsa',
         'timeout': 30,
     },
-    
+
     # Rate Limits (requests per hour)
     'rate_limits': {
         'github': 5000,
@@ -61,4 +61,4 @@ GIT_HOSTS = {
         'gitea': None,  # Set by server
         'gogs': None,  # Set by server
     },
-} 
+}

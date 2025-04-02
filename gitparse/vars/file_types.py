@@ -18,7 +18,7 @@ MIME_TO_LANGUAGE = {
     'text/x-swift': 'Swift',
     'text/x-kotlin': 'Kotlin',
     'text/x-scala': 'Scala',
-    
+
     # Web Technologies
     'text/html': 'HTML',
     'text/css': 'CSS',
@@ -26,23 +26,23 @@ MIME_TO_LANGUAGE = {
     'application/x-yaml': 'YAML',
     'text/xml': 'XML',
     'application/xml': 'XML',
-    
+
     # Documentation
     'text/markdown': 'Markdown',
     'text/x-rst': 'reStructuredText',
     'text/asciidoc': 'AsciiDoc',
     'text/plain': 'Plain Text',
-    
+
     # Configuration
     'text/x-toml': 'TOML',
     'text/x-ini': 'INI',
     'text/x-properties': 'Properties',
-    
+
     # Shell Scripts
     'text/x-shellscript': 'Shell',
     'text/x-bash': 'Bash',
     'text/x-powershell': 'PowerShell',
-    
+
     # Other
     'text/x-makefile': 'Makefile',
     'text/x-dockerfile': 'Dockerfile',
@@ -70,7 +70,7 @@ COMMON_EXTENSIONS = {
     '.swift': 'Swift',
     '.kt': 'Kotlin',
     '.scala': 'Scala',
-    
+
     # Web Technologies
     '.html': 'HTML',
     '.htm': 'HTML',
@@ -83,21 +83,21 @@ COMMON_EXTENSIONS = {
     '.yml': 'YAML',
     '.xml': 'XML',
     '.svg': 'SVG',
-    
+
     # Documentation
     '.md': 'Markdown',
     '.markdown': 'Markdown',
     '.rst': 'reStructuredText',
     '.adoc': 'AsciiDoc',
     '.txt': 'Plain Text',
-    
+
     # Configuration
     '.toml': 'TOML',
     '.ini': 'INI',
     '.cfg': 'INI',
     '.conf': 'INI',
     '.properties': 'Properties',
-    
+
     # Shell Scripts
     '.sh': 'Shell',
     '.bash': 'Bash',
@@ -106,10 +106,10 @@ COMMON_EXTENSIONS = {
     '.ps1': 'PowerShell',
     '.psm1': 'PowerShell',
     '.psd1': 'PowerShell',
-    
+
     # Build and Config
     'Makefile': 'Makefile',
     'Dockerfile': 'Dockerfile',
     'CMakeLists.txt': 'CMake',
     '.cmake': 'CMake',
-} 
+}
