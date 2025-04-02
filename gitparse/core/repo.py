@@ -25,6 +25,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 try:
     import magic
+
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
