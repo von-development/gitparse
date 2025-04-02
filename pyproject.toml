@@ -1,0 +1,59 @@
+[project]
+name = "gitparse"
+version = "0.1.0"
+description = "A typed, modular Python library for structured repository parsing"
+authors = [
+    {name = "Victor von Sohsten", email = "vondevelopment@gmail.com"}
+]
+requires-python = ">=3.8"
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.scripts]
+gitparse = "gitparse.cli:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "gitparse"
+version = "0.1.0"
+description = "A typed, modular Python library for structured repository parsing"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "gitparse"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+gitpython = "3.1.40"
+pydantic = "2.6.0"
+python-magic = "0.4.27"
+python-magic-bin = "0.4.14"
+typing-extensions = "4.12.0"
+tomli = "2.0.1"
+packaging = "23.2"
+colorama = "0.4.6"
+aiofiles = "24.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.7.0"
+ruff = "^0.0.284"
+
+[tool.ruff]
+select = ["E", "F", "I", "N", "W", "B", "UP"]
+ignore = []
+line-length = 100
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
