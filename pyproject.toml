@@ -1,6 +1,6 @@
 [project]
 name = "gitparse"
-version = "0.1.0"
+version = "0.1.1"
 description = "A typed, modular Python library for structured repository parsing"
 authors = [
     {name = "Victor von Sohsten", email = "vondevelopment@gmail.com"}
@@ -8,6 +8,24 @@ authors = [
 requires-python = ">=3.8"
 readme = "README.md"
 license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+
+[project.urls]
+Homepage = "https://github.com/von-development/gitparse"
+Repository = "https://github.com/von-development/gitparse.git"
+Documentation = "https://github.com/von-development/gitparse#readme"
+"Bug Tracker" = "https://github.com/von-development/gitparse/issues"
 
 [project.scripts]
 gitparse = "gitparse.cli:main"
@@ -18,23 +36,32 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "gitparse"
-version = "0.1.0"
+version = "0.1.1"
 description = "A typed, modular Python library for structured repository parsing"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Victor von Sohsten <vondevelopment@gmail.com>"]
 readme = "README.md"
 packages = [{include = "gitparse"}]
+repository = "https://github.com/von-development/gitparse"
+documentation = "https://github.com/von-development/gitparse#readme"
+keywords = ["git", "repository", "parser", "analysis", "metadata"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
 gitpython = "3.1.40"
 pydantic = "2.6.0"
 python-magic = "0.4.27"
-python-magic-bin = "0.4.14"
 typing-extensions = "4.12.0"
 tomli = "2.0.1"
 packaging = "23.2"
 colorama = "0.4.6"
 aiofiles = "24.1.0"
+
+[tool.poetry.group.windows.dependencies]
+python-magic-bin = { version = "0.4.14", platform = "win32" }
+
+[tool.poetry.group.unix.dependencies]
+# For Unix systems, libmagic is usually installed via the system package manager
+# e.g., apt-get install libmagic1 or yum install file-libs
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

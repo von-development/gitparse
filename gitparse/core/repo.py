@@ -496,7 +496,6 @@ class GitRepo:
         
         if not content_type:
             if HAS_MAGIC:
-                # Try using python-magic for more accurate detection
                 try:
                     content_type = magic.from_file(str(path), mime=True)
                 except Exception:
@@ -517,14 +516,35 @@ class GitRepo:
                     '.yml': 'application/x-yaml',
                     '.yaml': 'application/x-yaml',
                     '.xml': 'application/xml',
-                    '.txt': 'text/plain'
+                    '.txt': 'text/plain',
+                    '.sh': 'text/x-shellscript',
+                    '.bash': 'text/x-shellscript',
+                    '.php': 'text/x-php',
+                    '.rb': 'text/x-ruby',
+                    '.java': 'text/x-java',
+                    '.c': 'text/x-c',
+                    '.cpp': 'text/x-c++',
+                    '.h': 'text/x-c',
+                    '.hpp': 'text/x-c++',
+                    '.cs': 'text/x-csharp',
+                    '.go': 'text/x-go',
+                    '.rs': 'text/x-rust',
+                    '.swift': 'text/x-swift',
+                    '.kt': 'text/x-kotlin',
+                    '.kts': 'text/x-kotlin',
+                    '.scala': 'text/x-scala',
+                    '.pl': 'text/x-perl',
+                    '.r': 'text/x-r',
+                    '.dart': 'text/x-dart',
+                    '.lua': 'text/x-lua',
+                    '.sql': 'text/x-sql'
                 }.get(ext, 'application/octet-stream')
         
-        # Determine if binary
-        is_binary = False
+        # Determine if binary by trying to read as text
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 f.read(1024)  # Try reading as text
+            is_binary = False
         except UnicodeDecodeError:
             is_binary = True
         
