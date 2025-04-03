@@ -1,14 +1,15 @@
-"""Async implementation of GitRepo functionality."""
+"""Asynchronous repository analysis module."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union
 
 from gitparse.core.exceptions import GitFileNotFoundError, GitParseError
-from gitparse.core.repo import GitRepo
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 if TYPE_CHECKING:
     import types
@@ -19,21 +20,30 @@ if TYPE_CHECKING:
 # Type variable for generic return types
 T = TypeVar("T")
 
+logger = logging.getLogger(__name__)
 
-class AsyncGitRepo:
-    """Async wrapper around GitRepo for non-blocking operations.
 
-    This class provides asynchronous versions of all GitRepo methods,
-    allowing for non-blocking I/O operations in async contexts.
+class AsyncRepositoryAnalyzer:
+    """Asynchronous wrapper for RepositoryAnalyzer.
+
+    This class provides asynchronous versions of all RepositoryAnalyzer methods,
+    allowing for non-blocking repository analysis operations.
 
     Args:
-        source: Local path or GitHub URL to the repository
-        config: Configuration for extraction behavior
+        source (str): Local path or GitHub URL to the repository
+        config (Optional[ExtractionConfig]): Configuration for extraction behavior
+        max_workers (Optional[int]): Maximum number of worker threads
     """
 
-    def __init__(self, source: str, config: Optional[ExtractionConfig] = None) -> None:
-        self._repo = GitRepo(source, config)
-        self._executor = ThreadPoolExecutor()
+    def __init__(
+        self,
+        source: str,
+        config: Optional[ExtractionConfig] = None,
+        max_workers: Optional[int] = None,
+    ) -> None:
+        self._repo = RepositoryAnalyzer(source, config)
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._loop = asyncio.get_event_loop()
 
     async def _run_in_executor(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Run a sync function in thread pool executor.
@@ -46,8 +56,7 @@ class AsyncGitRepo:
         Returns:
             The result of the function call
         """
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, partial(func, *args, **kwargs))
+        return await self._loop.run_in_executor(self._executor, partial(func, *args, **kwargs))
 
     async def get_repository_info(self, output_file: Optional[str] = None) -> dict[str, str]:
         """Async version of get_repository_info."""

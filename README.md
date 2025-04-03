@@ -19,10 +19,10 @@ pip install gitparse
 
 ## Basic Usage
 
-### Synchronous API
+### Synchronous
 
 ```python
-from gitparse import GitRepo, ExtractionConfig
+from gitparse import RepositoryAnalyzer, ExtractionConfig
 
 # Configure analysis
 config = ExtractionConfig(
@@ -32,7 +32,7 @@ config = ExtractionConfig(
 )
 
 # Initialize and analyze repository
-repo = GitRepo("https://github.com/username/repo", config)
+repo = RepositoryAnalyzer("https://github.com/username/repo", config)
 
 # Repository metadata
 info = repo.get_repository_info()
@@ -57,27 +57,63 @@ stats = repo.get_language_stats()
 # }
 ```
 
-### Asynchronous API
 
-```python
-import asyncio
-from gitparse import AsyncGitRepo, ExtractionConfig
+## Command Line Interface
 
-async def analyze_repo():
-    config = ExtractionConfig(max_file_size=1024 * 1024)
-    
-    async with AsyncGitRepo("https://github.com/username/repo", config) as repo:
-        # Run operations concurrently
-        info, tree, deps = await asyncio.gather(
-            repo.get_repository_info(),
-            repo.get_file_tree(style="markdown"),
-            repo.get_dependencies()
-        )
-        return info, tree, deps
+Also, GitParse comes with CLI for quick repository analysis. Use `--help` with any command to see its specific options:
 
-# Returns tuple of (repository_info, file_tree, dependencies)
-results = asyncio.run(analyze_repo())
+```bash
+# Get general help
+gitparse --help
+
+# Get help for specific commands
+gitparse tree --help
+gitparse content --help
+gitparse all-contents --help
+
+# Common operations
+gitparse <repo_url> info
+gitparse <repo_url> tree --style markdown
+gitparse <repo_url> deps
+gitparse <repo_url> langs
+gitparse <repo_url> stats
+gitparse <repo_url> readme
+gitparse <repo_url> content path/to/file.py
+gitparse <repo_url> dir-tree src --style markdown
+
+# Advanced usage with filters
+gitparse <repo_url> all-contents --max-size 1048576 --exclude "*.pyc" "*.so"
+
+# Output options
+gitparse <repo_url> langs -o language_stats.json  # Save to file
+gitparse <repo_url> stats --no-pretty             # Disable pretty printing
 ```
+
+### Available Commands
+
+Each command supports `--help` for detailed usage information:
+
+- `info`: Get repository information
+- `tree`: Get repository file tree
+  - See `tree --help` for style options
+- `dir-tree`: Get directory file tree
+  - See `dir-tree --help` for style options
+- `dir-contents`: Get directory contents
+- `readme`: Get repository README content
+- `content`: Get specific file content
+- `all-contents`: Get all file contents
+  - See `all-contents --help` for filtering options
+- `deps`: Get repository dependencies
+- `langs`: Get language statistics
+- `stats`: Get repository statistics
+
+### Global Options
+
+Use `gitparse --help` to see all available options:
+
+- `-o, --output`: Save output to file
+- `--no-pretty`: Disable pretty printing
+- `-h, --help`: Show help message
 
 ## Advanced Features
 
@@ -135,7 +171,3 @@ poetry run pytest
 # Run linting
 poetry run ruff check .
 ```
-
-## License
-
-MIT License 

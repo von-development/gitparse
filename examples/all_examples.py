@@ -5,8 +5,8 @@ from pathlib import Path
 
 from gitparse import (
     # Core classes
-    GitRepo,
-    AsyncGitRepo,
+    RepositoryAnalyzer,
+    AsyncRepositoryAnalyzer,
     ExtractionConfig,
     # Sync functions
     get_repository_info,
@@ -47,7 +47,7 @@ def test_sync_class_api():
         include_patterns=["*.py", "*.md"],
     )
     
-    repo = GitRepo(REPO_URL, config)
+    repo = RepositoryAnalyzer(REPO_URL, config)
     
     # Test all methods
     print("\nRepository Info:", repo.get_repository_info())
@@ -72,7 +72,7 @@ async def test_async_class_api():
         include_patterns=["*.py", "*.md"],
     )
     
-    async with AsyncGitRepo(REPO_URL, config) as repo:
+    async with AsyncRepositoryAnalyzer(REPO_URL, config) as repo:
         # Test all methods
         print("\nRepository Info:", await repo.get_repository_info())
         print("\nFile Tree:", await repo.get_file_tree(style="markdown"))

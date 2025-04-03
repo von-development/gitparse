@@ -1,5 +1,6 @@
 """Core functionality for the GitParse library."""
 
+from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
 from gitparse.core.exceptions import (
     DependencyError,
     DirectoryNotFoundError,
@@ -9,10 +10,11 @@ from gitparse.core.exceptions import (
     ParseError,
     RepositoryNotFoundError,
 )
-from gitparse.core.repo import GitRepo
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 __all__ = [
-    "GitRepo",
+    "RepositoryAnalyzer",
+    "AsyncRepositoryAnalyzer",
     "GitParseError",
     "RepositoryNotFoundError",
     "InvalidRepositoryError",

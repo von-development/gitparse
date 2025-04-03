@@ -1,4 +1,4 @@
-"""Core repository handling module."""
+"""Repository analysis and parsing module."""
 
 from __future__ import annotations
 
@@ -30,19 +30,30 @@ try:
 except ImportError:
     HAS_MAGIC = False
 
-from gitparse.schema.config import ExtractionConfig
 from gitparse.core.exceptions import (
-    GitParseError,
-    RepositoryNotFoundError,
-    InvalidRepositoryError,
-    DirectoryNotFoundError,
     DependencyError,
+    DirectoryNotFoundError,
+    GitParseError,
+    InvalidRepositoryError,
+    RepositoryNotFoundError,
 )
+from gitparse.schema.config import ExtractionConfig
 from gitparse.vars.exclude_patterns import DEFAULT_EXCLUDE_PATTERNS
 from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Error messages
+ERR_REPO_NOT_INIT = "Repository not initialized"
+ERR_CLONE_FAILED = "Failed to clone repository"
+ERR_PARSE_REQUIREMENTS = "Failed to parse requirements.txt"
+ERR_PARSE_PYPROJECT = "Failed to parse pyproject.toml"
+ERR_PARSE_POETRY_DEPS = "Failed to parse Poetry dependencies"
+ERR_PARSE_POETRY_DEV = "Failed to parse Poetry dev dependencies"
+ERR_PARSE_PACKAGE_JSON = "Failed to parse package.json"
+ERR_PARSE_NPM_DEPS = "Failed to parse package.json dependencies"
+ERR_PARSE_NPM_DEV = "Failed to parse package.json dev dependencies"
 
 
 def _remove_readonly(
@@ -50,23 +61,17 @@ def _remove_readonly(
     path: str,
     _excinfo: Any,  # Unused but required by rmtree
 ) -> None:
-    """Error handler for shutil.rmtree to handle readonly files.
-
-    Args:
-        func: The function that failed
-        path: The path that caused the error
-        _excinfo: Exception info (unused)
-    """
-    # Make the file writable and try again
+    """Error handler for shutil.rmtree to handle readonly files."""
     Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 
-class GitRepo:
-    """Main interface for parsing and extracting data from a Git repository.
+class RepositoryAnalyzer:
+    """Main interface for analyzing and extracting data from Git repositories.
 
-    This class provides methods to analyze and extract various types of information
-    from either a local Git repository or a remote GitHub repository URL.
+    This class provides comprehensive analysis and data extraction capabilities
+    for both local and remote Git repositories. It handles repository metadata,
+    file analysis, dependency parsing, and statistical analysis.
 
     Args:
         source (str): Local path or GitHub URL to the repository
@@ -134,7 +139,7 @@ class GitRepo:
             try:
                 repo_path = Path(source_str).resolve()
                 self._validate_path(repo_path)
-            except (RepositoryNotFoundError, InvalidRepositoryError) as e:
+            except (RepositoryNotFoundError, InvalidRepositoryError):
                 logger.exception("Failed to resolve repository path")
                 raise
             else:
@@ -385,7 +390,7 @@ class GitRepo:
             lines = path.read_text().splitlines()
         except Exception as e:
             logger.exception("Failed to read requirements file")
-            raise DependencyError("Failed to read requirements.txt", e)
+            raise DependencyError(ERR_PARSE_REQUIREMENTS) from e
 
         for line in lines:
             stripped_line = line.strip()
@@ -440,7 +445,7 @@ class GitRepo:
             data = tomli.loads(path.read_text())
         except Exception as e:
             logger.exception("Failed to parse pyproject.toml")
-            raise DependencyError("Failed to parse pyproject.toml", e)
+            raise DependencyError(ERR_PARSE_PYPROJECT) from e
 
         deps: dict[str, dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
 
@@ -455,7 +460,7 @@ class GitRepo:
                 deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
             except Exception as e:
                 logger.exception("Failed to parse main dependencies")
-                raise DependencyError("Failed to parse Poetry dependencies", e)
+                raise DependencyError(ERR_PARSE_POETRY_DEPS) from e
 
         # Dev dependencies
         if "group" in poetry and "dev" in poetry["group"]:
@@ -465,7 +470,7 @@ class GitRepo:
                     deps["dev-dependencies"] = self._parse_poetry_dependencies(dev["dependencies"])
                 except Exception as e:
                     logger.exception("Failed to parse dev dependencies")
-                    raise DependencyError("Failed to parse Poetry dev dependencies", e)
+                    raise DependencyError(ERR_PARSE_POETRY_DEV) from e
 
         return deps
 
@@ -478,7 +483,7 @@ class GitRepo:
             data = json.loads(path.read_text())
         except Exception as e:
             logger.exception("Failed to parse package.json")
-            raise DependencyError("Failed to parse package.json", e)
+            raise DependencyError(ERR_PARSE_PACKAGE_JSON) from e
 
         deps: dict[str, list[dict[str, str]]] = {"dependencies": [], "devDependencies": []}
 
@@ -491,7 +496,7 @@ class GitRepo:
                 )
             except Exception as e:
                 logger.exception("Failed to parse dependencies")
-                raise DependencyError("Failed to parse package.json dependencies", e)
+                raise DependencyError(ERR_PARSE_NPM_DEPS) from e
 
         # Dev dependencies
         if "devDependencies" in data:
@@ -502,7 +507,7 @@ class GitRepo:
                 )
             except Exception as e:
                 logger.exception("Failed to parse devDependencies")
-                raise DependencyError("Failed to parse package.json dev dependencies", e)
+                raise DependencyError(ERR_PARSE_NPM_DEV) from e
 
         return deps
 

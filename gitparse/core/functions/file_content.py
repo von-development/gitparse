@@ -1,13 +1,14 @@
-"""File content functions."""
+"""File content-related functions."""
 
 from __future__ import annotations
 
-from typing import Optional, Union
-from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
-from gitparse.core.repo import GitRepo
-from gitparse.core.async_repo import AsyncGitRepo
-from gitparse.schema.config import ExtractionConfig
+from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
+
+if TYPE_CHECKING:
+    from gitparse.schema.config import ExtractionConfig
 
 
 def get_file_content(
@@ -29,7 +30,7 @@ def get_file_content(
     Returns:
         File content as string or None if file is binary/unreadable
     """
-    repo = GitRepo(source, config)
+    repo = RepositoryAnalyzer(source, config)
     return repo.get_file_content(file_path, output_file, encoding)
 
 
@@ -52,7 +53,7 @@ async def async_get_file_content(
     Returns:
         File content as string or None if file is binary/unreadable
     """
-    async with AsyncGitRepo(source, config) as repo:
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
         return await repo.get_file_content(file_path, output_file, encoding)
 
 
@@ -75,7 +76,7 @@ def get_all_contents(
     Returns:
         Dictionary mapping file paths to their contents
     """
-    repo = GitRepo(source, config)
+    repo = RepositoryAnalyzer(source, config)
     return repo.get_all_contents(max_file_size, exclude_patterns, output_file)
 
 
@@ -98,5 +99,5 @@ async def async_get_all_contents(
     Returns:
         Dictionary mapping file paths to their contents
     """
-    async with AsyncGitRepo(source, config) as repo:
-        return await repo.get_all_contents(max_file_size, exclude_patterns, output_file) 
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
+        return await repo.get_all_contents(max_file_size, exclude_patterns, output_file)

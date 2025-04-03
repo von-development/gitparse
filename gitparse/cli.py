@@ -14,8 +14,8 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
 
-from gitparse import GitRepo
 from gitparse.core.exceptions import GitParseError
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 # Initialize colorama for Windows support
 init()
@@ -190,7 +190,10 @@ def get_command_handler(command: str) -> callable:
     return handlers.get(command)
 
 
-def execute_command(repo: GitRepo, args: argparse.Namespace) -> dict[str, Any] | str | None:
+def execute_command(
+    repo: RepositoryAnalyzer,
+    args: argparse.Namespace,
+) -> dict[str, Any] | str | None:
     """Execute the requested command on the repository.
 
     Args:
@@ -226,7 +229,7 @@ def main() -> None:
     ) as progress:
         task = progress.add_task(f"[cyan]Initializing repository from {args.repo}...[/cyan]")
         try:
-            repo = GitRepo(args.repo)
+            repo = RepositoryAnalyzer(args.repo)
             progress.update(task, completed=True)
         except GitParseError as e:
             progress.update(task, completed=True)

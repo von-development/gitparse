@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, Union
-from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
-from gitparse.core.repo import GitRepo
-from gitparse.core.async_repo import AsyncGitRepo
-from gitparse.schema.config import ExtractionConfig
+from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
+
+if TYPE_CHECKING:
+    from gitparse.schema.config import ExtractionConfig
 
 
 def get_directory_tree(
@@ -29,7 +30,7 @@ def get_directory_tree(
     Returns:
         List of files or structured dictionary
     """
-    repo = GitRepo(source, config)
+    repo = RepositoryAnalyzer(source, config)
     return repo.get_directory_tree(directory, style, output_file)
 
 
@@ -52,7 +53,7 @@ async def async_get_directory_tree(
     Returns:
         List of files or structured dictionary
     """
-    async with AsyncGitRepo(source, config) as repo:
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
         return await repo.get_directory_tree(directory, style, output_file)
 
 
@@ -73,7 +74,7 @@ def get_directory_contents(
     Returns:
         Dictionary mapping file paths to their contents
     """
-    repo = GitRepo(source, config)
+    repo = RepositoryAnalyzer(source, config)
     return repo.get_directory_contents(directory, output_file)
 
 
@@ -94,5 +95,5 @@ async def async_get_directory_contents(
     Returns:
         Dictionary mapping file paths to their contents
     """
-    async with AsyncGitRepo(source, config) as repo:
-        return await repo.get_directory_contents(directory, output_file) 
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
+        return await repo.get_directory_contents(directory, output_file)

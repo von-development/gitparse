@@ -1,13 +1,16 @@
-"""File tree functions."""
+"""File tree-related functions."""
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional, Union
-from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
-from gitparse.core.repo import GitRepo
-from gitparse.core.async_repo import AsyncGitRepo
-from gitparse.schema.config import ExtractionConfig
+from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from gitparse.schema.config import ExtractionConfig
 
 
 def get_file_tree(
@@ -27,7 +30,7 @@ def get_file_tree(
     Returns:
         List of files or structured dictionary
     """
-    repo = GitRepo(source, config)
+    repo = RepositoryAnalyzer(source, config)
     return repo.get_file_tree(style, output_file)
 
 
@@ -48,5 +51,5 @@ async def async_get_file_tree(
     Returns:
         List of files or structured dictionary
     """
-    async with AsyncGitRepo(source, config) as repo:
-        return await repo.get_file_tree(style, output_file) 
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
+        return await repo.get_file_tree(style, output_file)

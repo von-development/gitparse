@@ -1,32 +1,14 @@
-"""Dependency analysis functions."""
+"""Dependency-related functions."""
 
 from __future__ import annotations
 
-from typing import Optional, Union
-from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union
 
-from gitparse.core.repo import GitRepo
-from gitparse.core.async_repo import AsyncGitRepo
-from gitparse.schema.config import ExtractionConfig
+from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
-
-def get_dependencies(
-    source: str,
-    config: Optional[ExtractionConfig] = None,
-    output_file: Optional[str] = None,
-) -> dict[str, Union[list[str], dict[str, str]]]:
-    """Get repository dependencies from package files.
-
-    Args:
-        source: Local path or GitHub URL to the repository
-        config: Configuration for extraction behavior
-        output_file: Optional path to save results. Use "auto" for auto-generated filename.
-
-    Returns:
-        Dictionary containing dependencies from various package files
-    """
-    repo = GitRepo(source, config)
-    return repo.get_dependencies(output_file)
+if TYPE_CHECKING:
+    from gitparse.schema.config import ExtractionConfig
 
 
 async def async_get_dependencies(
@@ -34,15 +16,16 @@ async def async_get_dependencies(
     config: Optional[ExtractionConfig] = None,
     output_file: Optional[str] = None,
 ) -> dict[str, Union[list[str], dict[str, str]]]:
-    """Get repository dependencies from package files asynchronously.
+    """Get repository dependencies asynchronously."""
+    async with AsyncRepositoryAnalyzer(source, config) as repo:
+        return await repo.get_dependencies(output_file)
 
-    Args:
-        source: Local path or GitHub URL to the repository
-        config: Configuration for extraction behavior
-        output_file: Optional path to save results. Use "auto" for auto-generated filename.
 
-    Returns:
-        Dictionary containing dependencies from various package files
-    """
-    async with AsyncGitRepo(source, config) as repo:
-        return await repo.get_dependencies(output_file) 
+def get_dependencies(
+    source: str,
+    config: Optional[ExtractionConfig] = None,
+    output_file: Optional[str] = None,
+) -> dict[str, Union[list[str], dict[str, str]]]:
+    """Get repository dependencies."""
+    repo = RepositoryAnalyzer(source, config)
+    return repo.get_dependencies(output_file)

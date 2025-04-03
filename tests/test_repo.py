@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from gitparse.core.repo import GitRepo
+from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 
 @pytest.fixture()
@@ -26,7 +26,7 @@ def test_init_with_local_path(temp_dir):
     test_file.write_text("test content")
 
     # Initialize repo with the test directory
-    repo = GitRepo(str(test_dir))
+    repo = RepositoryAnalyzer(str(test_dir))
 
     # Test public interface instead of private members
     repo_info = repo.get_repository_info()

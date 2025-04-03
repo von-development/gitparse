@@ -48,4 +48,4 @@ __all__ = [
     "async_get_all_contents",
     "async_get_directory_tree",
     "async_get_directory_contents",
-] 
+]
