@@ -1,6 +1,15 @@
 # GitParse
 
-A Python library for extracting and analyzing Git repository content with type safety.
+A modern Python library for Git repository analysis with async support and type safety.
+
+## Features
+
+- Repository metadata extraction
+- File tree analysis with multiple formats
+- Dependency parsing (Poetry, requirements.txt, package.json)
+- Language statistics and file type detection
+- Async support with context managers
+- Type-safe API with clear error handling
 
 ## Installation
 
@@ -8,110 +17,110 @@ A Python library for extracting and analyzing Git repository content with type s
 pip install gitparse
 ```
 
-## Quick Start
+## Basic Usage
 
-```python
-from gitparse import GitRepo
-
-# Local repository
-repo = GitRepo("path/to/repo")
-
-# Remote repository
-repo = GitRepo("https://github.com/username/repo")
-```
-
-## Features & Examples
-
-### Repository Info
-
-```python
-repo = GitRepo("path/to/repo")
-info = repo.get_repository_info()
-
-print(f"Name: {info['name']}")
-print(f"Default Branch: {info.get('default_branch')}")
-print(f"Head Commit: {info.get('head_commit')}")
-```
-
-### File Tree
-
-```python
-# Get file tree in different formats
-markdown_tree = repo.get_file_tree(style="markdown")
-dict_tree = repo.get_file_tree(style="dict")
-flat_tree = repo.get_file_tree(style="flattened")
-
-# Print markdown tree
-print("\n".join(markdown_tree))
-```
-
-### Dependencies
-
-```python
-deps = repo.get_dependencies()
-
-# Python dependencies from pyproject.toml
-if "pyproject.toml" in deps:
-    python_deps = deps["pyproject.toml"]
-    print("\nPython Dependencies:")
-    for name, version in python_deps["dependencies"].items():
-        print(f"- {name}: {version}")
-
-# Node.js dependencies from package.json
-if "package.json" in deps:
-    node_deps = deps["package.json"]
-    print("\nNode.js Dependencies:")
-    for name, version in node_deps["dependencies"].items():
-        print(f"- {name}: {version}")
-```
-
-### Async Support
-
-```python
-import asyncio
-from gitparse import AsyncGitRepo
-
-async def main():
-    async with AsyncGitRepo("path/to/repo") as repo:
-        # Get multiple pieces of info concurrently
-        info, tree = await asyncio.gather(
-            repo.get_repository_info(),
-            repo.get_file_tree(style="markdown")
-        )
-        return info, tree
-
-# Run async code
-info, tree = asyncio.run(main())
-```
-
-### CLI Usage
-
-```bash
-# Get basic info
-gitparse path/to/repo info
-
-# Get file tree
-gitparse path/to/repo tree --style markdown
-
-# Get dependencies
-gitparse path/to/repo deps
-
-# Get specific file content
-gitparse path/to/repo content README.md
-```
-
-### Configuration
+### Synchronous API
 
 ```python
 from gitparse import GitRepo, ExtractionConfig
 
+# Configure analysis
 config = ExtractionConfig(
-    max_file_size=5_000_000,  # 5MB limit
-    exclude_patterns=["*.pyc", "__pycache__/*"],
-    include_patterns=["*.py", "*.md"]
+    max_file_size=1024 * 1024,  # 1MB
+    exclude_patterns=["*.pyc"],
+    include_patterns=["*.py", "*.md"],
 )
 
-repo = GitRepo("path/to/repo", config=config)
+# Initialize and analyze repository
+repo = GitRepo("https://github.com/username/repo", config)
+
+# Repository metadata
+info = repo.get_repository_info()
+# Returns: {"name": "repo", "default_branch": "main", "head_commit": "abc123..."}
+
+# File tree (markdown format)
+tree = repo.get_file_tree(style="markdown")
+# Returns: ["- README.md", "  - src/", "    - main.py", ...]
+
+# Dependencies
+deps = repo.get_dependencies()
+# Returns: {
+#     "pyproject.toml": {"dependencies": {"requests": "^2.0.0"}},
+#     "requirements.txt": [{"name": "flask", "version": "2.0.0"}]
+# }
+
+# Language statistics
+stats = repo.get_language_stats()
+# Returns: {
+#     "Python": {"files": 10, "bytes": 1500, "percentage": 75.5},
+#     "Markdown": {"files": 2, "bytes": 500, "percentage": 24.5}
+# }
+```
+
+### Asynchronous API
+
+```python
+import asyncio
+from gitparse import AsyncGitRepo, ExtractionConfig
+
+async def analyze_repo():
+    config = ExtractionConfig(max_file_size=1024 * 1024)
+    
+    async with AsyncGitRepo("https://github.com/username/repo", config) as repo:
+        # Run operations concurrently
+        info, tree, deps = await asyncio.gather(
+            repo.get_repository_info(),
+            repo.get_file_tree(style="markdown"),
+            repo.get_dependencies()
+        )
+        return info, tree, deps
+
+# Returns tuple of (repository_info, file_tree, dependencies)
+results = asyncio.run(analyze_repo())
+```
+
+## Advanced Features
+
+### File Analysis
+
+```python
+# Get specific file content
+content = repo.get_file_content("README.md")
+# Returns: "# Project Title\n..."
+
+# Get all text files
+contents = repo.get_all_contents(
+    max_file_size=1024 * 1024,
+    exclude_patterns=["*.pyc", "*.so"]
+)
+# Returns: {"README.md": "# Title...", "src/main.py": "def main():..."}
+
+# Get directory tree
+tree = repo.get_directory_tree(
+    "src",
+    style="structured"  # or "markdown", "flattened"
+)
+# Returns: {"src": {"main.py": None, "utils": {"helpers.py": None}}}
+```
+
+### Statistics
+
+```python
+# Repository statistics
+stats = repo.get_statistics()
+# Returns: {
+#     "total_files": 100,
+#     "binary_ratio": 0.05,
+#     "avg_file_size": 1024,
+#     "language_breakdown": {...}
+# }
+
+# Language breakdown
+langs = repo.get_language_stats()
+# Returns: {
+#     "Python": {"files": 50, "percentage": 80.5},
+#     "JavaScript": {"files": 10, "percentage": 19.5}
+# }
 ```
 
 ## Development

@@ -76,13 +76,11 @@ class AsyncGitRepo:
     async def get_dependencies(
         self,
         output_file: Optional[str] = None,
-        config: Optional[ExtractionConfig] = None,
     ) -> dict[str, Union[list[str], dict[str, str]]]:
         """Async version of get_dependencies."""
         return await self._run_in_executor(
             self._repo.get_dependencies,
             output_file,
-            config,
         )
 
     async def get_language_stats(

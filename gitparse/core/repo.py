@@ -31,15 +31,18 @@ except ImportError:
     HAS_MAGIC = False
 
 from gitparse.schema.config import ExtractionConfig
+from gitparse.core.exceptions import (
+    GitParseError,
+    RepositoryNotFoundError,
+    InvalidRepositoryError,
+    DirectoryNotFoundError,
+    DependencyError,
+)
 from gitparse.vars.exclude_patterns import DEFAULT_EXCLUDE_PATTERNS
 from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-
-class GitError(Exception):
-    """Custom exception class for Git-related errors."""
 
 
 def _remove_readonly(
@@ -101,14 +104,15 @@ class GitRepo:
             is_dir: Whether the path should be a directory
 
         Raises:
-            ValueError: If path validation fails
+            RepositoryNotFoundError: If path does not exist
+            InvalidRepositoryError: If path is not of the correct type
         """
         if not path.exists():
             msg = f"Path does not exist: {path}"
-            raise ValueError(msg)
+            raise RepositoryNotFoundError(msg)
         if is_dir and not path.is_dir():
             msg = f"Path is not a directory: {path}"
-            raise ValueError(msg)
+            raise InvalidRepositoryError(msg)
 
     def _setup_repo_path(self) -> None:
         """Initialize repository path from source."""
@@ -130,10 +134,9 @@ class GitRepo:
             try:
                 repo_path = Path(source_str).resolve()
                 self._validate_path(repo_path)
-            except ValueError as e:
+            except (RepositoryNotFoundError, InvalidRepositoryError) as e:
                 logger.exception("Failed to resolve repository path")
-                msg = f"Invalid repository path: {e}"
-                raise ValueError(msg) from e
+                raise
             else:
                 self._repo_path = repo_path
                 # Try to load as Git repo
@@ -157,7 +160,7 @@ class GitRepo:
                 self._git_repo = git.Repo.clone_from(self.source, self._temp_dir)
         except GitCommandError as err:
             msg = f"Failed to clone repository: {err}"
-            raise GitError(msg) from err
+            raise GitParseError(msg) from err
         else:
             self._repo_path = self._temp_dir
 
@@ -380,9 +383,9 @@ class GitRepo:
         requirements = []
         try:
             lines = path.read_text().splitlines()
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to read requirements file")
-            return []
+            raise DependencyError("Failed to read requirements.txt", e)
 
         for line in lines:
             stripped_line = line.strip()
@@ -435,9 +438,9 @@ class GitRepo:
 
         try:
             data = tomli.loads(path.read_text())
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to parse pyproject.toml")
-            return {"dependencies": {}, "dev-dependencies": {}}
+            raise DependencyError("Failed to parse pyproject.toml", e)
 
         deps: dict[str, dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
 
@@ -450,8 +453,9 @@ class GitRepo:
         if "dependencies" in poetry:
             try:
                 deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to parse main dependencies")
+                raise DependencyError("Failed to parse Poetry dependencies", e)
 
         # Dev dependencies
         if "group" in poetry and "dev" in poetry["group"]:
@@ -459,8 +463,9 @@ class GitRepo:
             if "dependencies" in dev:
                 try:
                     deps["dev-dependencies"] = self._parse_poetry_dependencies(dev["dependencies"])
-                except Exception:
+                except Exception as e:
                     logger.exception("Failed to parse dev dependencies")
+                    raise DependencyError("Failed to parse Poetry dev dependencies", e)
 
         return deps
 
@@ -471,9 +476,9 @@ class GitRepo:
 
         try:
             data = json.loads(path.read_text())
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to parse package.json")
-            return {"dependencies": [], "devDependencies": []}
+            raise DependencyError("Failed to parse package.json", e)
 
         deps: dict[str, list[dict[str, str]]] = {"dependencies": [], "devDependencies": []}
 
@@ -484,8 +489,9 @@ class GitRepo:
                     {"name": name, "version": version}
                     for name, version in data["dependencies"].items()
                 )
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to parse dependencies")
+                raise DependencyError("Failed to parse package.json dependencies", e)
 
         # Dev dependencies
         if "devDependencies" in data:
@@ -494,8 +500,9 @@ class GitRepo:
                     {"name": name, "version": version}
                     for name, version in data["devDependencies"].items()
                 )
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to parse devDependencies")
+                raise DependencyError("Failed to parse package.json dev dependencies", e)
 
         return deps
 
@@ -506,7 +513,7 @@ class GitRepo:
         """Get repository dependencies from package files."""
         if not self._repo_path:
             msg = "Repository not initialized"
-            raise GitError(msg)
+            raise GitParseError(msg)
 
         dependencies = {
             "requirements.txt": [],
@@ -617,7 +624,7 @@ class GitRepo:
         """Get language statistics for the repository."""
         if not self._repo_path:
             msg = "Repository not initialized"
-            raise GitError(msg)
+            raise GitParseError(msg)
 
         stats: dict[str, dict[str, Union[int, float]]] = {}
         total_bytes = 0
@@ -803,7 +810,7 @@ class GitRepo:
         """Get contents of all text files in the repository."""
         if not self._repo_path:
             msg = "Repository not initialized"
-            raise GitError(msg)
+            raise GitParseError(msg)
 
         contents = {}
         files = self._walk_directory(self._repo_path)
@@ -853,12 +860,12 @@ class GitRepo:
         """Get file tree for a specific directory."""
         if not self._repo_path:
             msg = "Repository not initialized"
-            raise GitError(msg)
+            raise GitParseError(msg)
 
         dir_path = self._repo_path / directory
         if not dir_path.is_dir():
             msg = f"Directory not found: {directory}"
-            raise GitError(msg)
+            raise DirectoryNotFoundError(msg)
 
         files = self._walk_directory(dir_path)
 
@@ -880,12 +887,12 @@ class GitRepo:
         """Get contents of all files in a directory."""
         if not self._repo_path:
             msg = "Repository not initialized"
-            raise GitError(msg)
+            raise GitParseError(msg)
 
         dir_path = self._repo_path / directory
         if not dir_path.is_dir():
             msg = f"Directory not found: {directory}"
-            raise GitError(msg)
+            raise DirectoryNotFoundError(msg)
 
         contents = {}
         files = list(self._walk_directory(dir_path))  # Convert to list to avoid multiple iterations
