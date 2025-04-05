@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 import tomli
 from packaging.requirements import InvalidRequirement, Requirement
-
 
 from gitparse.parsers.deps.base import DependencyParser
 
 logger = logging.getLogger(__name__)
 
 # VCS URL patterns
-VCS_PATTERNS = {
+VCS_PATTERNS: dict[str, str] = {
     "git": r"git\+https?://.*",
     "git+ssh": r"git\+ssh://.*",
     "git+git": r"git\+git://.*",
@@ -26,7 +27,7 @@ VCS_PATTERNS = {
 }
 
 # Direct URL patterns
-DIRECT_URL_PATTERNS = [
+DIRECT_URL_PATTERNS: list[str] = [
     r"https?://.*\.(tar\.gz|zip|whl|tgz|tar\.bz2)$",
     r"https?://github\.com/.*/archive/.*\.(tar\.gz|zip)$",
     r"https?://github\.com/.*/releases/download/.*\.(tar\.gz|zip|whl)$",
@@ -35,7 +36,7 @@ DIRECT_URL_PATTERNS = [
 
 class RequirementsTxtParser(DependencyParser):
     """Parser for requirements.txt files.
-    
+
     This parser handles requirements.txt files and extracts dependencies including:
     - Package names with version specifiers
     - VCS dependencies (git, hg, svn, bzr)
@@ -44,15 +45,66 @@ class RequirementsTxtParser(DependencyParser):
     - Extras
     """
 
-    file_patterns = ["requirements*.txt", "requirements/*.txt"]
-    parser_name = "requirements.txt"
+    file_patterns: ClassVar[list[str]] = ["requirements*.txt", "requirements/*.txt"]
+    parser_name: ClassVar[str] = "requirements.txt"
 
-    def parse(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def _parse_requirement_line(self, line: str) -> Optional[dict[str, Any]]:
+        """Parse a single requirement line.
+
+        Args:
+            line: Line from requirements.txt
+
+        Returns:
+            Parsed requirement or None if invalid
+        """
+        stripped_line = line.strip()
+        if not stripped_line or stripped_line.startswith("#"):
+            return None
+
+        # Try to parse as a regular requirement
+        try:
+            req = Requirement(stripped_line)
+            return {
+                "name": req.name,
+                "specifier": str(req.specifier) if req.specifier else "",
+                "extras": sorted(req.extras) if req.extras else [],
+                "url": req.url if hasattr(req, "url") else None,
+                "markers": str(req.marker) if req.marker else None,
+            }
+        except InvalidRequirement:
+            pass
+
+        # Check for VCS dependencies
+        for vcs_type, pattern in VCS_PATTERNS.items():
+            if re.match(pattern, stripped_line):
+                return {
+                    "type": "vcs",
+                    "vcs": vcs_type,
+                    "raw": stripped_line,
+                    "url": stripped_line,
+                }
+
+        # Check for direct URL dependencies
+        if any(re.match(pattern, stripped_line) for pattern in DIRECT_URL_PATTERNS):
+            return {
+                "type": "url",
+                "raw": stripped_line,
+                "url": stripped_line,
+            }
+
+        logger.warning("Invalid requirement found: %s", stripped_line)
+        return {
+            "type": "unknown",
+            "raw": stripped_line,
+            "parsed": False,
+        }
+
+    def parse(self, file_path: Path) -> Optional[dict[str, Any]]:
         """Parse dependencies from a requirements.txt file.
-        
+
         Args:
             file_path: Path to the requirements.txt file
-            
+
         Returns:
             Dictionary containing parsed dependencies, or None if parsing fails
         """
@@ -61,66 +113,13 @@ class RequirementsTxtParser(DependencyParser):
 
         try:
             lines = file_path.read_text(encoding="utf-8").splitlines()
-        except Exception as e:
-            logger.warning("Failed to read requirements file: %s", str(e))
+        except (OSError, UnicodeError) as e:
+            logger.warning("Failed to read requirements file: %s", e)
             return None
 
         dependencies = []
-        for line in lines:
-            stripped_line = line.strip()
-            if not stripped_line or stripped_line.startswith("#"):
-                continue
-
-            # Try to parse as a regular requirement first
-            try:
-                req = Requirement(stripped_line)
-                dependencies.append({
-                    "name": req.name,
-                    "specifier": str(req.specifier) if req.specifier else "",
-                    "extras": sorted(req.extras) if req.extras else [],
-                    "url": req.url if hasattr(req, "url") else None,
-                    "markers": str(req.marker) if req.marker else None,
-                })
-                continue
-            except InvalidRequirement:
-                # Not a regular requirement, try VCS or direct URL
-                pass
-
-            # Check for VCS dependencies
-            vcs_match = None
-            for vcs_type, pattern in VCS_PATTERNS.items():
-                if re.match(pattern, stripped_line):
-                    vcs_match = {
-                        "type": "vcs",
-                        "vcs": vcs_type,
-                        "raw": stripped_line,
-                        "url": stripped_line,
-                    }
-                    break
-
-            if vcs_match:
-                dependencies.append(vcs_match)
-                continue
-
-            # Check for direct URL dependencies
-            is_direct_url = any(
-                re.match(pattern, stripped_line) for pattern in DIRECT_URL_PATTERNS
-            )
-            if is_direct_url:
-                dependencies.append({
-                    "type": "url",
-                    "raw": stripped_line,
-                    "url": stripped_line,
-                })
-                continue
-
-            # If we get here, it's an unparseable requirement
-            logger.warning("Invalid requirement found: %s", stripped_line)
-            dependencies.append({
-                "type": "unknown",
-                "raw": stripped_line,
-                "parsed": False,
-            })
+        parsed_deps = [self._parse_requirement_line(line) for line in lines]
+        dependencies.extend(dep for dep in parsed_deps if dep is not None)
 
         # Determine dependency type from file path
         dep_type = "main"
@@ -136,7 +135,7 @@ class RequirementsTxtParser(DependencyParser):
 
 class PoetryParser(DependencyParser):
     """Parser for Poetry dependencies in pyproject.toml files.
-    
+
     This parser handles both Poetry and PEP 621 dependencies including:
     - Main dependencies
     - Development dependencies
@@ -146,15 +145,83 @@ class PoetryParser(DependencyParser):
     - Path dependencies
     """
 
-    file_patterns = ["pyproject.toml"]
-    parser_name = "poetry"
+    file_patterns: ClassVar[list[str]] = ["pyproject.toml"]
+    parser_name: ClassVar[str] = "poetry"
 
-    def parse(self, file_path: Path) -> Optional[Dict[str, Dict[str, Any]]]:
+    def _parse_poetry_section(self, poetry: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Parse the Poetry section of pyproject.toml.
+
+        Args:
+            poetry: Poetry section data
+
+        Returns:
+            Parsed dependencies
+        """
+        deps: dict[str, dict[str, Any]] = {
+            "dependencies": {},
+            "dev-dependencies": {},
+            "optional-dependencies": {},
+        }
+
+        # Main dependencies
+        if "dependencies" in poetry:
+            deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
+
+        # Dev dependencies (new style)
+        if "group" in poetry:
+            for group_name, group in poetry["group"].items():
+                if "dependencies" in group:
+                    if group_name == "dev":
+                        deps["dev-dependencies"] = self._parse_poetry_dependencies(
+                            group["dependencies"],
+                        )
+                    else:
+                        deps["optional-dependencies"][group_name] = self._parse_poetry_dependencies(
+                            group["dependencies"],
+                        )
+
+        # Dev dependencies (old style)
+        if "dev-dependencies" in poetry:
+            deps["dev-dependencies"].update(
+                self._parse_poetry_dependencies(poetry["dev-dependencies"]),
+            )
+
+        return deps
+
+    def _parse_pep621_section(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Parse the PEP 621 section of pyproject.toml.
+
+        Args:
+            project: Project section data
+
+        Returns:
+            Parsed dependencies
+        """
+        deps: dict[str, dict[str, Any]] = {
+            "dependencies": {},
+            "dev-dependencies": {},
+            "optional-dependencies": {},
+        }
+
+        # Main dependencies
+        if "dependencies" in project:
+            deps["dependencies"] = self._parse_pep621_dependencies(project["dependencies"])
+
+        # Optional dependencies
+        if "optional-dependencies" in project:
+            for group_name, group_deps in project["optional-dependencies"].items():
+                deps["optional-dependencies"][group_name] = self._parse_pep621_dependencies(
+                    group_deps,
+                )
+
+        return deps
+
+    def parse(self, file_path: Path) -> Optional[dict[str, dict[str, Any]]]:
         """Parse dependencies from a pyproject.toml file.
-        
+
         Args:
             file_path: Path to the pyproject.toml file
-            
+
         Returns:
             Dictionary containing parsed dependencies, or None if parsing fails
         """
@@ -163,71 +230,37 @@ class PoetryParser(DependencyParser):
 
         try:
             data = tomli.loads(file_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.warning("Failed to parse pyproject.toml: %s", str(e))
+        except (tomli.TOMLDecodeError, OSError, UnicodeError) as e:
+            logger.warning("Failed to parse pyproject.toml: %s", e)
             return None
 
-        deps: Dict[str, Dict[str, Any]] = {
+        deps: dict[str, dict[str, Any]] = {
             "dependencies": {},
             "dev-dependencies": {},
             "optional-dependencies": {},
         }
 
-        # Try Poetry format first
+        # Try Poetry format
         if "tool" in data and "poetry" in data["tool"]:
-            poetry = data["tool"]["poetry"]
-            
-            # Main dependencies
-            if "dependencies" in poetry:
-                deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
-
-            # Dev dependencies (new style)
-            if "group" in poetry:
-                for group_name, group in poetry["group"].items():
-                    if "dependencies" in group:
-                        if group_name == "dev":
-                            deps["dev-dependencies"] = self._parse_poetry_dependencies(
-                                group["dependencies"]
-                            )
-                        else:
-                            deps["optional-dependencies"][group_name] = self._parse_poetry_dependencies(
-                                group["dependencies"]
-                            )
-
-            # Dev dependencies (old style)
-            if "dev-dependencies" in poetry:
-                deps["dev-dependencies"].update(
-                    self._parse_poetry_dependencies(poetry["dev-dependencies"])
-                )
+            poetry_deps = self._parse_poetry_section(data["tool"]["poetry"])
+            deps.update(poetry_deps)
 
         # Try PEP 621 format
         if "project" in data:
-            project = data["project"]
-            
-            # Main dependencies
-            if "dependencies" in project:
-                deps["dependencies"].update(
-                    self._parse_pep621_dependencies(project["dependencies"])
-                )
-
-            # Optional dependencies
-            if "optional-dependencies" in project:
-                for group_name, group_deps in project["optional-dependencies"].items():
-                    deps["optional-dependencies"][group_name] = self._parse_pep621_dependencies(
-                        group_deps
-                    )
+            pep621_deps = self._parse_pep621_section(data["project"])
+            deps.update(pep621_deps)
 
         return deps
 
     def _parse_poetry_dependencies(
         self,
-        deps_dict: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        deps_dict: dict[str, Any],
+    ) -> dict[str, Any]:
         """Parse Poetry dependencies section.
-        
+
         Args:
             deps_dict: Dictionary containing dependencies
-            
+
         Returns:
             Dictionary mapping package names to dependency info
         """
@@ -263,27 +296,27 @@ class PoetryParser(DependencyParser):
 
     def _parse_pep621_dependencies(
         self,
-        deps_list: List[str],
-    ) -> Dict[str, Any]:
+        deps_list: list[str],
+    ) -> dict[str, Any]:
         """Parse PEP 621 dependencies section.
-        
+
         Args:
             deps_list: List of dependency strings
-            
+
         Returns:
             Dictionary mapping package names to dependency info
         """
         result = {}
-        for dep in deps_list:
-            try:
+        # Process all dependencies at once to avoid try-except in loop
+        try:
+            for dep in deps_list:
                 req = Requirement(dep)
                 result[req.name] = {
                     "version": str(req.specifier) if req.specifier else "",
                     "extras": sorted(req.extras) if req.extras else [],
                     "markers": str(req.marker) if req.marker else None,
                 }
-            except InvalidRequirement:
-                logger.warning("Invalid PEP 621 requirement: %s", dep)
-                result[dep] = {"version": "", "raw": dep}
+        except InvalidRequirement as e:
+            logger.warning("Invalid PEP 621 requirement: %s", e)
 
-        return result 
+        return result

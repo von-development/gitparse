@@ -4,14 +4,15 @@ import contextlib
 import gc
 import logging
 import mimetypes
-import os
 import shutil
 import stat
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable
 
 try:
     import magic
+
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
@@ -20,30 +21,32 @@ from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
 logger = logging.getLogger(__name__)
 
+
 def handle_readonly(
     func: Callable[[str], None],
     path: str,
     _excinfo: Any,  # Unused but required by rmtree
 ) -> None:
     """Error handler for shutil.rmtree to handle readonly files.
-    
+
     Args:
         func: The function that failed
         path: The path that caused the error
         _excinfo: Exception info (unused)
     """
     # Make the file writable and try again
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
+
 
 def cleanup_directory(directory: Path, is_git: bool = False) -> None:
     """Clean up a directory, handling Git-specific cleanup issues.
-    
+
     Args:
         directory: Path to the directory to clean up
         is_git: Whether this is a Git repository directory
     """
-    if not directory or not os.path.exists(directory):
+    if not directory or not directory.exists():
         return
 
     # Force garbage collection to help release file handles
@@ -57,10 +60,11 @@ def cleanup_directory(directory: Path, is_git: bool = False) -> None:
         pass
     except OSError as e:
         # Only log if it's not a Git-related file access error
-        if not is_git or not (str(e).endswith('.git') or '.git' in str(e)):
-            logger.warning(f"Failed to cleanup directory: {directory}")
+        if not is_git or not (str(e).endswith(".git") or ".git" in str(e)):
+            logger.warning("Failed to cleanup directory: %s", directory)
 
-def get_file_type(path: Path) -> Tuple[str, bool]:
+
+def get_file_type(path: Path) -> tuple[str, bool]:
     """Get MIME type and binary flag for a file.
 
     Args:
@@ -95,6 +99,7 @@ def get_file_type(path: Path) -> Tuple[str, bool]:
         logger.exception("Failed to check file type")
         return "application/octet-stream", True
 
+
 def map_mime_to_language(mime_type: str) -> str:
     """Map MIME type to programming language name."""
     # First try MIME mapping
@@ -108,21 +113,33 @@ def map_mime_to_language(mime_type: str) -> str:
 
     return "Other"
 
+
 def is_binary_file(path: Path) -> bool:
     """Check if a file is binary.
-    
+
     Args:
         path: Path to the file to check
-        
+
     Returns:
         bool: True if the file is binary, False otherwise
     """
     # First check extension
     ext = path.suffix.lower()
     if ext in {
-        ".jpg", ".jpeg", ".png", ".gif", ".ico", ".pdf",
-        ".zip", ".gz", ".tar", ".rar", ".exe", ".dll",
-        ".so", ".pyc"
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".ico",
+        ".pdf",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".rar",
+        ".exe",
+        ".dll",
+        ".so",
+        ".pyc",
     }:
         return True
 
@@ -145,22 +162,26 @@ def is_binary_file(path: Path) -> bool:
         logger.exception("Failed to check if file is binary")
         return False
 
+
 @contextlib.contextmanager
-def temp_dir_context():
-    """Context manager for temporary directory cleanup."""
+def temp_dir_context() -> Generator[None, None, None]:
+    """Context manager for temporary directory cleanup.
+
+    Yields:
+        None: This context manager doesn't yield any value
+    """
     try:
         yield
     finally:
         cleanup_temp_directories()
 
-def cleanup_temp_directories():
+
+def cleanup_temp_directories() -> None:
     """Clean up all temporary directories in the system temp directory."""
     import tempfile
-    temp_dir = tempfile.gettempdir()
-    for item in os.listdir(temp_dir):
-        item_path = os.path.join(temp_dir, item)
-        if os.path.isdir(item_path) and item.startswith('tmp'):
-            try:
-                shutil.rmtree(item_path)
-            except Exception:
-                pass 
+
+    temp_root = Path(tempfile.gettempdir())
+    for item in temp_root.iterdir():
+        if item.is_dir() and item.name.startswith("tmp"):
+            with contextlib.suppress(Exception):
+                shutil.rmtree(item)

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from gitparse.parsers.deps.base import DependencyParser
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class NodeJSParser(DependencyParser):
     """Parser for Node.js package.json files.
-    
+
     This parser handles package.json files and extracts both regular and development
     dependencies. It supports various dependency types including:
     - dependencies
@@ -23,15 +25,15 @@ class NodeJSParser(DependencyParser):
     - optionalDependencies
     """
 
-    file_patterns = ["package.json"]
-    parser_name = "nodejs"
+    file_patterns: ClassVar[list[str]] = ["package.json"]
+    parser_name: ClassVar[str] = "nodejs"
 
-    def parse(self, file_path: Path) -> Optional[Dict[str, List[Dict[str, str]]]]:
+    def parse(self, file_path: Path) -> Optional[dict[str, list[dict[str, str]]]]:
         """Parse dependencies from a package.json file.
-        
+
         Args:
             file_path: Path to the package.json file
-            
+
         Returns:
             Dictionary containing parsed dependencies by type, or None if parsing fails
         """
@@ -40,11 +42,11 @@ class NodeJSParser(DependencyParser):
 
         try:
             data = json.loads(file_path.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.warning("Failed to parse package.json: %s", str(e))
+        except (json.JSONDecodeError, OSError, UnicodeError) as e:
+            logger.warning("Failed to parse package.json: %s", e)
             return None
 
-        dependencies: Dict[str, List[Dict[str, str]]] = {
+        dependencies: dict[str, list[dict[str, str]]] = {
             "dependencies": [],
             "devDependencies": [],
             "peerDependencies": [],
@@ -58,25 +60,24 @@ class NodeJSParser(DependencyParser):
                     deps = data[dep_type]
                     if isinstance(deps, dict):
                         dependencies[dep_type].extend(
-                            self._parse_dependency(name, version)
-                            for name, version in deps.items()
+                            self._parse_dependency(name, version) for name, version in deps.items()
                         )
-                except Exception as e:
+                except (KeyError, TypeError, ValueError) as e:
                     logger.warning(
                         "Failed to parse %s in package.json: %s",
                         dep_type,
-                        str(e),
+                        e,
                     )
 
         return dependencies
 
-    def _parse_dependency(self, name: str, version_spec: Any) -> Dict[str, str]:
+    def _parse_dependency(self, name: str, version_spec: Any) -> dict[str, str]:
         """Parse a single dependency entry.
-        
+
         Args:
             name: Package name
             version_spec: Version specification (can be string or dict)
-            
+
         Returns:
             Dictionary containing parsed dependency information
         """
@@ -94,12 +95,12 @@ class NodeJSParser(DependencyParser):
                 "name": name,
                 "version": version_spec.get("version", ""),
             }
-        
+
         # Handle simple version strings
         version = str(version_spec)
         version = self.normalize_version(version)
-        
+
         return {
             "name": name,
             "version": version,
-        } 
+        }

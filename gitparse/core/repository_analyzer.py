@@ -10,6 +10,7 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional, Union
@@ -20,6 +21,7 @@ from git.exc import GitCommandError
 
 try:
     import magic
+
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
@@ -30,10 +32,9 @@ from gitparse.core.exceptions import (
     InvalidRepositoryError,
     RepositoryNotFoundError,
 )
-from gitparse.schema.config import ExtractionConfig
 from gitparse.parsers.deps import DependencyParser
+from gitparse.schema.config import ExtractionConfig
 from gitparse.utils.fs_utils import (
-    cleanup_directory,
     get_file_type,
     is_binary_file,
     map_mime_to_language,
@@ -61,14 +62,14 @@ def _handle_readonly(
     _excinfo: Any,  # Unused but required by rmtree
 ) -> None:
     """Error handler for shutil.rmtree to handle readonly files.
-    
+
     Args:
         func: The function that failed
         path: The path that caused the error
         _excinfo: Exception info (unused)
     """
     # Make the file writable and try again
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 
@@ -387,47 +388,41 @@ class RepositoryAnalyzer:
         return None
 
     @contextlib.contextmanager
-    def _temp_dir_context(self):
-        """Context manager for temporary directory cleanup."""
+    def _temp_dir_context(self) -> Generator[None, None, None]:
+        """Create and manage a temporary directory context.
+
+        Yields:
+            None
+        """
         try:
+            temp_dir = Path(tempfile.mkdtemp())
             yield
         finally:
-            self._cleanup_temp_dir()
+            if temp_dir.exists():
+                shutil.rmtree(str(temp_dir), onerror=_handle_readonly)
 
     @staticmethod
-    def cleanup_temp_directories():
+    def cleanup_temp_directories() -> None:
         """Clean up all temporary directories in the system temp directory."""
-        temp_dir = tempfile.gettempdir()
-        for item in os.listdir(temp_dir):
-            item_path = os.path.join(temp_dir, item)
-            if os.path.isdir(item_path) and item.startswith('tmp'):
-                try:
-                    shutil.rmtree(item_path)
-                except Exception:
-                    pass
+        temp_root = Path(tempfile.gettempdir())
+        for path in temp_root.iterdir():
+            if path.is_dir():
+                with contextlib.suppress(Exception):
+                    logger.debug("Cleaning up temporary directory: %s", path)
+                    shutil.rmtree(str(path), onerror=_handle_readonly)
 
     def _cleanup_temp_dir(self) -> None:
-        """Clean up the temporary directory used for cloning."""
-        if not self._temp_dir or not os.path.exists(self._temp_dir):
-            return
-
-        # Close Git repository if it exists
-        if self._git_repo is not None:
-            try:
-                self._git_repo.close()
-            except Exception:
-                pass
-            self._git_repo = None
-
-        cleanup_directory(self._temp_dir, is_git=True)
+        """Clean up temporary directory if it exists."""
+        if self._temp_dir and self._temp_dir.exists():
+            with contextlib.suppress(Exception):
+                logger.debug("Cleaning up temporary directory: %s", self._temp_dir)
+                shutil.rmtree(str(self._temp_dir), onerror=_handle_readonly)
+            self._temp_dir = None
 
     def __del__(self) -> None:
-        """Cleanup temporary directory if it exists."""
-        try:
+        """Clean up resources when object is deleted."""
+        with contextlib.suppress(Exception):
             self._cleanup_temp_dir()
-        except Exception:
-            # Suppress all cleanup errors in __del__
-            pass
 
     def _get_file_type(self, path: Path) -> tuple[str, bool]:
         """Get MIME type and binary flag for a file."""
@@ -602,28 +597,36 @@ class RepositoryAnalyzer:
         output_file: Optional[str] = None,
         encoding: str = "utf-8",
     ) -> Optional[str]:
-        """Get content of a specific file from the repository."""
-        if not self._repo_path:
-            msg = "Repository path not initialized"
-            raise RuntimeError(msg)
+        """Get the content of a specific file.
 
-        full_path = self._repo_path / Path(file_path)
-        if not full_path.exists() or not full_path.is_file():
+        Args:
+            file_path: Path to the file relative to repository root
+            output_file: Optional path to save output to
+            encoding: File encoding to use
+
+        Returns:
+            File content as string or None if file cannot be read
+        """
+        if not self._repo_path:
+            raise GitParseError(ERR_REPO_NOT_INIT)
+
+        target = self._repo_path / file_path
+        if not target.exists():
+            logger.warning("File does not exist: %s", target)
             return None
 
-        # Check if file is text
-        content_type, is_binary = self._get_file_type(full_path)
-        if is_binary:
+        if target.is_dir():
+            logger.warning("Path is a directory: %s", target)
             return None
 
         try:
-            content = full_path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            logger.warning("Failed to decode file as %s: %s", encoding, file_path)
-            return None
-        else:
-            self._save_output(content, output_file, f"content_{Path(file_path).name}")
+            content = target.read_text(encoding=encoding)
+            if output_file:
+                Path(output_file).write_text(content, encoding=encoding)
             return content
+        except Exception as e:
+            logger.warning("Failed to read file %s: %s", target, e)
+            return None
 
     def get_all_contents(
         self,
@@ -631,48 +634,48 @@ class RepositoryAnalyzer:
         exclude_patterns: Optional[list[str]] = None,
         output_file: Optional[str] = None,
     ) -> dict[str, str]:
-        """Get contents of all text files in the repository."""
+        """Get contents of all text files in the repository.
+
+        Args:
+            max_file_size: Maximum file size in bytes to read
+            exclude_patterns: List of glob patterns to exclude
+            output_file: Optional path to save output to
+
+        Returns:
+            Dictionary mapping file paths to their contents
+        """
         if not self._repo_path:
-            msg = "Repository not initialized"
-            raise GitParseError(msg)
+            raise GitParseError(ERR_REPO_NOT_INIT)
 
-        contents = {}
-        files = self._walk_directory(self._repo_path)
+        exclude_patterns = exclude_patterns or []
+        contents: dict[str, str] = {}
 
-        # Pre-compile exclude patterns for better performance
-        compiled_patterns = None
-        if exclude_patterns:
-            compiled_patterns = [fnmatch.translate(p) for p in exclude_patterns]
+        for path in self._walk_directory(self._repo_path):
+            try:
+                # Skip excluded files
+                if any(fnmatch.fnmatch(str(path), pattern) for pattern in exclude_patterns):
+                    continue
 
-        # Pre-process files to minimize try-except overhead
-        valid_files = []
+                # Skip large files
+                if max_file_size and path.stat().st_size > max_file_size:
+                    logger.warning("Skipping large file: %s", path)
+                    continue
 
-        # First pass: validate files
-        for file_path in files:
-            # Skip if file is too large
-            size_limit = max_file_size or self.config.max_file_size
-            if file_path.stat().st_size > size_limit:
+                # Skip binary files
+                if self._is_binary_file(path):
+                    continue
+
+                # Read file content
+                rel_path = str(path.relative_to(self._repo_path))
+                contents[rel_path] = path.read_text(encoding="utf-8")
+
+            except Exception as e:
+                logger.warning("Failed to read file %s: %s", path, e)
                 continue
 
-            # Skip if file matches any exclude pattern
-            rel_path = str(file_path.relative_to(self._repo_path))
-            if compiled_patterns and any(
-                fnmatch.fnmatch(rel_path, pattern) for pattern in compiled_patterns
-            ):
-                continue
+        if output_file:
+            Path(output_file).write_text(json.dumps(contents, indent=2), encoding="utf-8")
 
-            valid_files.append(rel_path)
-
-        # Second pass: read file contents
-        try:
-            for rel_path in valid_files:
-                content = self.get_file_content(rel_path)
-                if content is not None:
-                    contents[rel_path] = content
-        except Exception:
-            logger.exception("Failed to read files")
-
-        self._save_output(contents, output_file, "all_contents")
         return contents
 
     def get_directory_tree(
@@ -746,7 +749,7 @@ class RepositoryAnalyzer:
 
         with self._temp_dir_context():
             dependencies = {}
-            
+
             # Find all dependency files
             for path in self._walk_directory(self._repo_path):
                 # Skip if file doesn't match any parser patterns
@@ -766,9 +769,7 @@ class RepositoryAnalyzer:
                             if deps:
                                 dependencies[str(path.relative_to(self._repo_path))] = deps
                         except Exception as e:
-                            logger.warning(
-                                f"Failed to parse dependencies in {path}: {str(e)}"
-                            )
+                            logger.warning(f"Failed to parse dependencies in {path}: {e!s}")
 
             self._save_output(dependencies, output_file, "dependencies")
             return dependencies

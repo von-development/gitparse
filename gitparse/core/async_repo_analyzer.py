@@ -8,16 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union
 
-from gitparse.core.exceptions import (
-    DirectoryNotFoundError,
-    GitParseError,
-    InvalidRepositoryError
-)
+from gitparse.core.exceptions import DirectoryNotFoundError, GitParseError, InvalidRepositoryError
 from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 if TYPE_CHECKING:
     import types
     from typing import Self
+
     from gitparse.schema.config import ExtractionConfig
 
 # Type variable for generic return types
@@ -27,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Error messages
 ERR_GET_CONTENTS = "Failed to get all contents"
+
 
 class AsyncRepositoryAnalyzer:
     """Asynchronous wrapper for RepositoryAnalyzer.

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-
 __all__ = [
     "DependencyParser",
     "NodeJSParser",
-    "PoetryParser", 
+    "PoetryParser",
     "RequirementsTxtParser",
-] 
+]

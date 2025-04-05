@@ -9,6 +9,7 @@ from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 if TYPE_CHECKING:
     from pathlib import Path
+
     from gitparse.schema.config import ExtractionConfig
 
 

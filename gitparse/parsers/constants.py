@@ -91,4 +91,4 @@ COMMON_LOCATIONS = {
     "node": ["node", "nodejs", "js"],
     "ruby": ["ruby", "rb"],
     "java": ["java", "jvm"],
-} 
+}

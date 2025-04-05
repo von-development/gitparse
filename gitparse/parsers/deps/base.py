@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 class DependencyParser(ABC):
     """Base class for all dependency parsers.
-    
+
     This class defines the interface that all dependency parsers must implement
     and provides common utility methods.
     """
@@ -48,8 +50,11 @@ class DependencyParser(ABC):
             List of paths to dependency files
         """
         files = []
-        for pattern in self.file_patterns:
-            files.extend(self.repo_path.glob(pattern))
+        try:
+            for pattern in self.file_patterns:
+                files.extend(self.repo_path.glob(pattern))
+        except (OSError, ValueError) as e:
+            logger.warning("Failed to find dependency files: %s", e)
         return sorted(files)
 
     def can_parse(self, file_path: Path) -> bool:
@@ -61,10 +66,7 @@ class DependencyParser(ABC):
         Returns:
             True if this parser can handle the file
         """
-        return any(
-            file_path.match(pattern)
-            for pattern in self.file_patterns
-        )
+        return any(file_path.match(pattern) for pattern in self.file_patterns)
 
     def safe_read(self, file_path: Path, encoding: str = "utf-8") -> Optional[str]:
         """Safely read a file with proper error handling.
@@ -93,11 +95,11 @@ class DependencyParser(ABC):
         """
         # Remove common prefixes
         version = version.strip().lstrip("^~=<>")
-        
+
         # Handle common formats
         if version.startswith("v"):
             version = version[1:]
-        
+
         return version
 
     def parse_vcs_requirement(self, spec: str) -> dict[str, Any]:
@@ -110,7 +112,7 @@ class DependencyParser(ABC):
             Dictionary with parsed VCS info
         """
         result = {"type": "vcs"}
-        
+
         # Handle git+http(s) format
         if spec.startswith("git+"):
             result["vcs"] = "git"
@@ -142,4 +144,4 @@ class DependencyParser(ABC):
             for indicator in ["test", "dev", "development", "requirements-dev"]
         ):
             return "dev"
-        return "main" 
+        return "main"
