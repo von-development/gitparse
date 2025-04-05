@@ -1,7 +1,6 @@
 """Full example demonstrating all GitParse functionality."""
 
 import asyncio
-from pathlib import Path
 
 from gitparse import (
     # Core classes
@@ -49,7 +48,6 @@ def test_sync_class_api():
     
     repo = RepositoryAnalyzer(REPO_URL, config)
     
-    # Test all methods
     print("\nRepository Info:", repo.get_repository_info())
     print("\nFile Tree:", repo.get_file_tree(style="markdown"))
     print("\nREADME:", repo.get_readme_content())
@@ -73,7 +71,7 @@ async def test_async_class_api():
     )
     
     async with AsyncRepositoryAnalyzer(REPO_URL, config) as repo:
-        # Test all methods
+
         print("\nRepository Info:", await repo.get_repository_info())
         print("\nFile Tree:", await repo.get_file_tree(style="markdown"))
         print("\nREADME:", await repo.get_readme_content())

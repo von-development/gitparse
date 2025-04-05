@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from typing import TYPE_CHECKING, Literal, Optional, Union
 
 from gitparse.core.async_repo_analyzer import AsyncRepositoryAnalyzer
 from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 if TYPE_CHECKING:
     from pathlib import Path
-
     from gitparse.schema.config import ExtractionConfig
 
 
@@ -39,7 +38,7 @@ async def async_get_file_tree(
     style: Literal["flattened", "markdown", "structured", "dict"] = "flattened",
     config: Optional[ExtractionConfig] = None,
     output_file: Optional[Union[str, Path]] = None,
-) -> Union[list[str], dict[str, Any]]:
+) -> Union[list[str], dict]:
     """Get repository file tree asynchronously.
 
     Args:

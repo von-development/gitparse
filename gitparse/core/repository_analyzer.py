@@ -6,40 +6,39 @@ import contextlib
 import fnmatch
 import json
 import logging
-import mimetypes
 import os
 import shutil
 import stat
-import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional, Union
 from urllib.parse import urlparse
 
 import git
-import tomli
 from git.exc import GitCommandError
-from packaging.requirements import InvalidRequirement, Requirement
 
 try:
     import magic
-
     HAS_MAGIC = True
 except ImportError:
     HAS_MAGIC = False
 
 from gitparse.core.exceptions import (
-    DependencyError,
     DirectoryNotFoundError,
     GitParseError,
     InvalidRepositoryError,
     RepositoryNotFoundError,
 )
 from gitparse.schema.config import ExtractionConfig
+from gitparse.parsers.deps import DependencyParser
+from gitparse.utils.fs_utils import (
+    cleanup_directory,
+    get_file_type,
+    is_binary_file,
+    map_mime_to_language,
+)
 from gitparse.vars.exclude_patterns import DEFAULT_EXCLUDE_PATTERNS
-from gitparse.vars.file_types import COMMON_EXTENSIONS, MIME_TO_LANGUAGE
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -56,13 +55,20 @@ ERR_PARSE_NPM_DEPS = "Failed to parse package.json dependencies"
 ERR_PARSE_NPM_DEV = "Failed to parse package.json dev dependencies"
 
 
-def _remove_readonly(
+def _handle_readonly(
     func: Callable[[str], None],
     path: str,
     _excinfo: Any,  # Unused but required by rmtree
 ) -> None:
-    """Error handler for shutil.rmtree to handle readonly files."""
-    Path(path).chmod(stat.S_IWRITE)
+    """Error handler for shutil.rmtree to handle readonly files.
+    
+    Args:
+        func: The function that failed
+        path: The path that caused the error
+        _excinfo: Exception info (unused)
+    """
+    # Make the file writable and try again
+    os.chmod(path, stat.S_IWRITE)
     func(path)
 
 
@@ -380,247 +386,60 @@ class RepositoryAnalyzer:
                         return content
         return None
 
-    def _parse_requirements_txt(self, path: Path) -> list[dict[str, str]]:
-        """Parse a requirements.txt file."""
-        if not path.exists():
-            return []
-
-        requirements = []
+    @contextlib.contextmanager
+    def _temp_dir_context(self):
+        """Context manager for temporary directory cleanup."""
         try:
-            lines = path.read_text().splitlines()
-        except Exception as e:
-            logger.exception("Failed to read requirements file")
-            raise DependencyError(ERR_PARSE_REQUIREMENTS) from e
+            yield
+        finally:
+            self._cleanup_temp_dir()
 
-        for line in lines:
-            stripped_line = line.strip()
-            if not stripped_line or stripped_line.startswith("#"):
-                continue
-
-            try:
-                req = Requirement(stripped_line)
-            except InvalidRequirement:
-                logger.warning("Invalid requirement found: %s", stripped_line)
-                continue
-            else:
-                requirements.append(
-                    {
-                        "name": req.name,
-                        "specifier": str(req.specifier) if req.specifier else "",
-                        "extras": sorted(req.extras) if req.extras else [],
-                        "url": req.url if hasattr(req, "url") else None,
-                    },
-                )
-
-        return requirements
-
-    def _parse_poetry_dependencies(
-        self,
-        deps_dict: dict[str, Any],
-    ) -> dict[str, str]:
-        """Parse Poetry dependencies section.
-
-        Args:
-            deps_dict: Dictionary containing dependencies
-
-        Returns:
-            Dictionary mapping package names to version specs
-        """
-        result = {}
-        for name, spec in deps_dict.items():
-            if name == "python":
-                continue
-            if isinstance(spec, str):
-                result[name] = spec
-            elif isinstance(spec, dict):
-                result[name] = spec.get("version", "")
-        return result
-
-    def _parse_poetry_toml(self, path: Path) -> dict[str, dict[str, str]]:
-        """Parse a pyproject.toml file with Poetry dependencies."""
-        if not path.exists():
-            return {}
-
-        try:
-            data = tomli.loads(path.read_text())
-        except Exception as e:
-            logger.exception("Failed to parse pyproject.toml")
-            raise DependencyError(ERR_PARSE_PYPROJECT) from e
-
-        deps: dict[str, dict[str, str]] = {"dependencies": {}, "dev-dependencies": {}}
-
-        if "tool" not in data or "poetry" not in data["tool"]:
-            return deps
-
-        poetry = data["tool"]["poetry"]
-
-        # Main dependencies
-        if "dependencies" in poetry:
-            try:
-                deps["dependencies"] = self._parse_poetry_dependencies(poetry["dependencies"])
-            except Exception as e:
-                logger.exception("Failed to parse main dependencies")
-                raise DependencyError(ERR_PARSE_POETRY_DEPS) from e
-
-        # Dev dependencies
-        if "group" in poetry and "dev" in poetry["group"]:
-            dev = poetry["group"]["dev"]
-            if "dependencies" in dev:
+    @staticmethod
+    def cleanup_temp_directories():
+        """Clean up all temporary directories in the system temp directory."""
+        temp_dir = tempfile.gettempdir()
+        for item in os.listdir(temp_dir):
+            item_path = os.path.join(temp_dir, item)
+            if os.path.isdir(item_path) and item.startswith('tmp'):
                 try:
-                    deps["dev-dependencies"] = self._parse_poetry_dependencies(dev["dependencies"])
-                except Exception as e:
-                    logger.exception("Failed to parse dev dependencies")
-                    raise DependencyError(ERR_PARSE_POETRY_DEV) from e
-
-        return deps
-
-    def _parse_package_json(self, path: Path) -> dict[str, list[dict[str, str]]]:
-        """Parse a package.json file."""
-        if not path.exists():
-            return {}
-
-        try:
-            data = json.loads(path.read_text())
-        except Exception as e:
-            logger.exception("Failed to parse package.json")
-            raise DependencyError(ERR_PARSE_PACKAGE_JSON) from e
-
-        deps: dict[str, list[dict[str, str]]] = {"dependencies": [], "devDependencies": []}
-
-        # Regular dependencies
-        if "dependencies" in data:
-            try:
-                deps["dependencies"].extend(
-                    {"name": name, "version": version}
-                    for name, version in data["dependencies"].items()
-                )
-            except Exception as e:
-                logger.exception("Failed to parse dependencies")
-                raise DependencyError(ERR_PARSE_NPM_DEPS) from e
-
-        # Dev dependencies
-        if "devDependencies" in data:
-            try:
-                deps["devDependencies"].extend(
-                    {"name": name, "version": version}
-                    for name, version in data["devDependencies"].items()
-                )
-            except Exception as e:
-                logger.exception("Failed to parse devDependencies")
-                raise DependencyError(ERR_PARSE_NPM_DEV) from e
-
-        return deps
-
-    def get_dependencies(
-        self,
-        output_file: Optional[str] = None,
-    ) -> dict[str, Union[list[str], dict[str, str]]]:
-        """Get repository dependencies from package files."""
-        if not self._repo_path:
-            msg = "Repository not initialized"
-            raise GitParseError(msg)
-
-        dependencies = {
-            "requirements.txt": [],
-            "pyproject.toml": {"dependencies": [], "dev-dependencies": []},
-            "package.json": {"dependencies": [], "devDependencies": []},
-        }
-
-        # Process each package file if it exists
-        req_txt = self._repo_path / "requirements.txt"
-        if req_txt.exists():
-            try:
-                dependencies["requirements.txt"] = self._parse_requirements_txt(req_txt)
-            except Exception:
-                logger.exception("Failed to parse requirements.txt")
-
-        pyproject = self._repo_path / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                dependencies["pyproject.toml"] = self._parse_poetry_toml(pyproject)
-            except Exception:
-                logger.exception("Failed to parse pyproject.toml")
-
-        package_json = self._repo_path / "package.json"
-        if package_json.exists():
-            try:
-                dependencies["package.json"] = self._parse_package_json(package_json)
-            except Exception:
-                logger.exception("Failed to parse package.json")
-
-        self._save_output(dependencies, output_file, "dependencies")
-        return dependencies
+                    shutil.rmtree(item_path)
+                except Exception:
+                    pass
 
     def _cleanup_temp_dir(self) -> None:
-        """Safely cleanup temporary directory."""
-        if not self._temp_dir or not self._temp_dir.exists():
+        """Clean up the temporary directory used for cloning."""
+        if not self._temp_dir or not os.path.exists(self._temp_dir):
             return
 
-        try:
-            # On Windows, sometimes Git keeps handles open briefly
-            if sys.platform == "win32":
-                time.sleep(0.1)  # Small delay to let handles close
-
-            # Close any Git objects that might hold handles
-            if self._git_repo:
+        # Close Git repository if it exists
+        if self._git_repo is not None:
+            try:
                 self._git_repo.close()
+            except Exception:
+                pass
+            self._git_repo = None
 
-            # Remove the directory with error handler for readonly files
-            shutil.rmtree(self._temp_dir, onerror=_remove_readonly)
-        except Exception:
-            logger.exception("Failed to cleanup temporary directory")
+        cleanup_directory(self._temp_dir, is_git=True)
 
     def __del__(self) -> None:
         """Cleanup temporary directory if it exists."""
-        self._cleanup_temp_dir()
+        try:
+            self._cleanup_temp_dir()
+        except Exception:
+            # Suppress all cleanup errors in __del__
+            pass
 
     def _get_file_type(self, path: Path) -> tuple[str, bool]:
-        """Get MIME type and binary flag for a file.
-
-        Args:
-            path: Path to the file
-
-        Returns:
-            Tuple of (mime_type, is_binary)
-        """
-        # First try by extension
-        mime_type, _ = mimetypes.guess_type(str(path))
-        if mime_type:
-            return mime_type, not mime_type.startswith("text/")
-
-        # Then try python-magic if available
-        if HAS_MAGIC:
-            try:
-                mime_type = magic.from_file(str(path), mime=True)
-            except Exception:
-                logger.exception("Failed to get file type with magic")
-            else:
-                return mime_type, not mime_type.startswith(
-                    ("text/", "application/json", "application/xml", "application/x-yaml"),
-                )
-
-        # Fallback to basic binary check
-        try:
-            with path.open("rb") as f:
-                chunk = f.read(1024)  # Read first 1KB
-                is_binary = b"\0" in chunk
-                return "application/octet-stream" if is_binary else "text/plain", is_binary
-        except Exception:
-            logger.exception("Failed to check file type")
-            return "application/octet-stream", True
+        """Get MIME type and binary flag for a file."""
+        return get_file_type(path)
 
     def _map_mime_to_language(self, mime_type: str) -> str:
         """Map MIME type to programming language name."""
-        # First try MIME mapping
-        if mime_type in MIME_TO_LANGUAGE:
-            return MIME_TO_LANGUAGE[mime_type]
+        return map_mime_to_language(mime_type)
 
-        # Try by extension
-        ext = Path(mime_type).suffix.lower()
-        if ext in COMMON_EXTENSIONS:
-            return COMMON_EXTENSIONS[ext]
-
-        return "Other"
+    def _is_binary_file(self, path: Path) -> bool:
+        """Check if a file is binary."""
+        return is_binary_file(path)
 
     def get_language_stats(
         self,
@@ -916,43 +735,40 @@ class RepositoryAnalyzer:
         self._save_output(contents, output_file, "dir_contents")
         return contents
 
-    def _is_binary_file(self, path: Path) -> bool:
-        """Check if a file is binary."""
-        # First check extension
-        ext = path.suffix.lower()
-        if ext in {
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".ico",
-            ".pdf",
-            ".zip",
-            ".gz",
-            ".tar",
-            ".rar",
-            ".exe",
-            ".dll",
-            ".so",
-            ".pyc",
-        }:
-            return True
+    def get_dependencies(
+        self,
+        output_file: Optional[Union[str, Path]] = None,
+    ) -> dict[str, Any]:
+        """Get all dependencies from the repository."""
+        if not self._repo_path:
+            msg = "Repository not initialized"
+            raise GitParseError(msg)
 
-        # Use python-magic if available
-        if HAS_MAGIC:
-            try:
-                mime = magic.from_file(str(path), mime=True)
-                return not mime.startswith(
-                    ("text/", "application/json", "application/xml", "application/x-yaml"),
-                )
-            except Exception:
-                logger.exception("Failed to check file type with magic")
+        with self._temp_dir_context():
+            dependencies = {}
+            
+            # Find all dependency files
+            for path in self._walk_directory(self._repo_path):
+                # Skip if file doesn't match any parser patterns
+                if not any(
+                    fnmatch.fnmatch(path.name, pattern)
+                    for parser in DependencyParser.__subclasses__()
+                    for pattern in parser.file_patterns
+                ):
+                    continue
 
-        # Fallback: try reading as text
-        try:
-            with path.open("rb") as f:
-                chunk = f.read(1024)  # Read first 1KB
-                return b"\0" in chunk
-        except Exception:
-            logger.exception("Failed to check if file is binary")
-            return False
+                # Try each parser
+                for parser_cls in DependencyParser.__subclasses__():
+                    parser = parser_cls(self._repo_path)
+                    if parser.can_parse(path):
+                        try:
+                            deps = parser.parse(path)
+                            if deps:
+                                dependencies[str(path.relative_to(self._repo_path))] = deps
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to parse dependencies in {path}: {str(e)}"
+                            )
+
+            self._save_output(dependencies, output_file, "dependencies")
+            return dependencies

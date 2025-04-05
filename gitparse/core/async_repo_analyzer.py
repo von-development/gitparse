@@ -8,13 +8,16 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union
 
-from gitparse.core.exceptions import GitFileNotFoundError, GitParseError
+from gitparse.core.exceptions import (
+    DirectoryNotFoundError,
+    GitParseError,
+    InvalidRepositoryError
+)
 from gitparse.core.repository_analyzer import RepositoryAnalyzer
 
 if TYPE_CHECKING:
     import types
     from typing import Self
-
     from gitparse.schema.config import ExtractionConfig
 
 # Type variable for generic return types
@@ -22,6 +25,8 @@ T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
+# Error messages
+ERR_GET_CONTENTS = "Failed to get all contents"
 
 class AsyncRepositoryAnalyzer:
     """Asynchronous wrapper for RepositoryAnalyzer.
@@ -70,7 +75,7 @@ class AsyncRepositoryAnalyzer:
         self,
         style: Literal["flattened", "markdown", "structured", "dict"] = "flattened",
         output_file: Optional[str] = None,
-    ) -> Union[list[str], dict[str, Any]]:
+    ) -> Union[list[str], dict]:
         """Async version of get_file_tree."""
         return await self._run_in_executor(self._repo.get_file_tree, style, output_file)
 
@@ -85,42 +90,30 @@ class AsyncRepositoryAnalyzer:
     async def get_dependencies(
         self,
         output_file: Optional[str] = None,
-    ) -> dict[str, Union[list[str], dict[str, str]]]:
+    ) -> dict[str, Any]:
         """Async version of get_dependencies."""
-        return await self._run_in_executor(
-            self._repo.get_dependencies,
-            output_file,
-        )
+        return await self._run_in_executor(self._repo.get_dependencies, output_file)
 
     async def get_language_stats(
         self,
         output_file: Optional[str] = None,
     ) -> dict[str, dict[str, Union[int, float]]]:
         """Async version of get_language_stats."""
-        return await self._run_in_executor(
-            self._repo.get_language_stats,
-            output_file,
-        )
+        return await self._run_in_executor(self._repo.get_language_stats, output_file)
 
     async def get_statistics(
         self,
         output_file: Optional[str] = None,
     ) -> dict[str, Any]:
         """Async version of get_statistics."""
-        return await self._run_in_executor(
-            self._repo.get_statistics,
-            output_file,
-        )
+        return await self._run_in_executor(self._repo.get_statistics, output_file)
 
     async def get_repo_stats(
         self,
         output_file: Optional[str] = None,
     ) -> dict[str, Any]:
         """Async version of get_repo_stats."""
-        return await self._run_in_executor(
-            self._repo.get_repo_stats,
-            output_file,
-        )
+        return await self._run_in_executor(self._repo.get_repo_stats, output_file)
 
     async def get_file_content(
         self,
@@ -136,7 +129,7 @@ class AsyncRepositoryAnalyzer:
                 output_file,
                 encoding,
             )
-        except GitFileNotFoundError:
+        except (InvalidRepositoryError, DirectoryNotFoundError):
             return None
 
     async def get_all_contents(
@@ -145,11 +138,7 @@ class AsyncRepositoryAnalyzer:
         exclude_patterns: Optional[list[str]] = None,
         output_file: Optional[str] = None,
     ) -> dict[str, str]:
-        """Async version of get_all_contents.
-
-        This implementation is optimized for async by reading files concurrently.
-        """
-        error_msg = "Failed to get all contents"
+        """Async version of get_all_contents."""
         try:
             return await self._run_in_executor(
                 self._repo.get_all_contents,
@@ -158,14 +147,14 @@ class AsyncRepositoryAnalyzer:
                 output_file,
             )
         except GitParseError as e:
-            raise GitParseError(error_msg) from e
+            raise GitParseError(ERR_GET_CONTENTS) from e
 
     async def get_directory_tree(
         self,
         directory: str,
         style: Literal["flattened", "markdown", "structured"] = "flattened",
         output_file: Optional[str] = None,
-    ) -> Union[list[str], dict[str, Any]]:
+    ) -> Union[list[str], dict]:
         """Async version of get_directory_tree."""
         return await self._run_in_executor(
             self._repo.get_directory_tree,
