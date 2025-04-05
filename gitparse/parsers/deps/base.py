@@ -80,7 +80,7 @@ class DependencyParser(ABC):
         """
         try:
             return file_path.read_text(encoding=encoding)
-        except Exception as e:
+        except (OSError, UnicodeError) as e:
             logger.warning("Failed to read %s: %s", file_path, e)
             return None
 

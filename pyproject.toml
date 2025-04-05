@@ -1,6 +1,6 @@
 [project]
 name = "gitparse"
-version = "0.1.3"
+version = "0.1.4"
 description = "A typed, modular Python library for structured repository parsing"
 authors = [
     {name = "Victor von Sohsten", email = "vondevelopment@gmail.com"}
@@ -35,7 +35,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "gitparse"
-version = "0.1.3"
+version = "0.1.4"
 description = "A typed, modular Python library for structured repository parsing"
 authors = ["Victor von Sohsten <vondevelopment@gmail.com>"]
 readme = "README.md"

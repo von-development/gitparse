@@ -252,6 +252,51 @@ class PoetryParser(DependencyParser):
 
         return deps
 
+    def _parse_vcs_dependency(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Parse VCS (git) dependency specification.
+
+        Args:
+            spec: Dictionary containing VCS dependency info
+
+        Returns:
+            Parsed VCS dependency info
+        """
+        dep_info = {"type": "vcs", "vcs": "git", "url": spec["git"]}
+        if "rev" in spec:
+            dep_info["rev"] = spec["rev"]
+        return dep_info
+
+    def _parse_path_dependency(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Parse local path dependency specification.
+
+        Args:
+            spec: Dictionary containing path dependency info
+
+        Returns:
+            Parsed path dependency info
+        """
+        return {"type": "path", "path": spec["path"]}
+
+    def _parse_standard_fields(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Parse standard dependency fields.
+
+        Args:
+            spec: Dictionary containing dependency info
+
+        Returns:
+            Parsed standard fields
+        """
+        dep_info = {}
+        if "version" in spec:
+            dep_info["version"] = spec["version"]
+        if "optional" in spec:
+            dep_info["optional"] = spec["optional"]
+        if "extras" in spec:
+            dep_info["extras"] = spec["extras"]
+        if "markers" in spec:
+            dep_info["markers"] = spec["markers"]
+        return dep_info
+
     def _parse_poetry_dependencies(
         self,
         deps_dict: dict[str, Any],
@@ -271,26 +316,19 @@ class PoetryParser(DependencyParser):
 
             if isinstance(spec, str):
                 result[name] = {"version": spec}
-            elif isinstance(spec, dict):
-                dep_info = {}
-                if "version" in spec:
-                    dep_info["version"] = spec["version"]
-                if "git" in spec:
-                    dep_info["type"] = "vcs"
-                    dep_info["vcs"] = "git"
-                    dep_info["url"] = spec["git"]
-                    if "rev" in spec:
-                        dep_info["rev"] = spec["rev"]
-                if "path" in spec:
-                    dep_info["type"] = "path"
-                    dep_info["path"] = spec["path"]
-                if "optional" in spec:
-                    dep_info["optional"] = spec["optional"]
-                if "extras" in spec:
-                    dep_info["extras"] = spec["extras"]
-                if "markers" in spec:
-                    dep_info["markers"] = spec["markers"]
-                result[name] = dep_info
+                continue
+
+            if not isinstance(spec, dict):
+                continue
+
+            dep_info = self._parse_standard_fields(spec)
+
+            if "git" in spec:
+                dep_info.update(self._parse_vcs_dependency(spec))
+            elif "path" in spec:
+                dep_info.update(self._parse_path_dependency(spec))
+
+            result[name] = dep_info
 
         return result
 

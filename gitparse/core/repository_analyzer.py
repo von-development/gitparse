@@ -10,11 +10,13 @@ import os
 import shutil
 import stat
 import tempfile
-from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Union
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import git
 from git.exc import GitCommandError
@@ -27,9 +29,11 @@ except ImportError:
     HAS_MAGIC = False
 
 from gitparse.core.exceptions import (
+    DependencyError,
     DirectoryNotFoundError,
     GitParseError,
     InvalidRepositoryError,
+    ParseError,
     RepositoryNotFoundError,
 )
 from gitparse.parsers.deps import DependencyParser
@@ -237,11 +241,11 @@ class RepositoryAnalyzer:
                 info["remotes"] = [r.name for r in self._git_repo.remotes]
             except (AttributeError, TypeError):
                 info["remotes"] = []
-            else:
-                self._save_output(info, output_file, "repo_info")
-                return info
         except (git.InvalidGitRepositoryError, git.NoSuchPathError, AttributeError):
             return {"name": self._repo_path.name if self._repo_path else "unknown"}
+        else:
+            self._save_output(info, output_file, "repo_info")
+            return info
 
     def get_repo_info(self, output_file: Optional[Union[str, Path]] = None) -> dict[str, str]:
         """Alias for get_repository_info."""
@@ -425,8 +429,18 @@ class RepositoryAnalyzer:
             self._cleanup_temp_dir()
 
     def _get_file_type(self, path: Path) -> tuple[str, bool]:
-        """Get MIME type and binary flag for a file."""
-        return get_file_type(path)
+        """Get MIME type and binary status for a file using python-magic."""
+        if not HAS_MAGIC or not magic:
+            return get_file_type(path)
+
+        try:
+            mime_type = magic.from_file(str(path), mime=True)
+            is_binary = not mime_type.startswith(("text/", "application/json"))
+        except (OSError, PermissionError):
+            logger.warning("Failed to get MIME type for %s", path)
+            return get_file_type(path)
+        else:
+            return mime_type, is_binary
 
     def _map_mime_to_language(self, mime_type: str) -> str:
         """Map MIME type to programming language name."""
@@ -469,16 +483,19 @@ class RepositoryAnalyzer:
                 stats[language]["bytes"] += size
                 total_bytes += size
                 total_files += 1
-        except Exception:
+        except OSError:
             logger.exception("Failed to process files for language statistics")
+            return stats
+        else:
+            # Calculate percentages
+            if total_bytes > 0:
+                for lang_stats in stats.values():
+                    bytes_count = lang_stats["bytes"]
+                    lang_stats["percentage"] = round((bytes_count / total_bytes) * 100, 2)
 
-        # Calculate percentages
-        if total_bytes > 0:
-            for lang_stats in stats.values():
-                bytes_count = lang_stats["bytes"]
-                lang_stats["percentage"] = round((bytes_count / total_bytes) * 100, 2)
+            self._save_output(stats, output_file, "language_stats")
+            return stats
 
-        self._save_output(stats, output_file, "language_stats")
         return stats
 
     def get_statistics(
@@ -510,7 +527,7 @@ class RepositoryAnalyzer:
                 size = file_path.stat().st_size
                 is_binary = self._is_binary_file(file_path)
                 file_info.append((file_path, size, is_binary))
-        except Exception:
+        except (OSError, PermissionError):
             logger.exception("Failed to process files")
             return stats
 
@@ -563,33 +580,33 @@ class RepositoryAnalyzer:
         except Exception:
             logger.exception("Failed to process files")
             return stats
-
-        # Process collected info without try-except
-        for size, ext, is_binary, rel_path in file_info:
-            stats["total_size"] += size
-            stats["total_files"] += 1
-
-            if ext:
-                stats["file_types"][ext] = stats["file_types"].get(ext, 0) + 1
-            if is_binary:
-                stats["binary_count"] += 1
-
-            stats["largest_files"].append({"path": rel_path, "size": size})
-
-        # Post-process stats
-        if stats["total_files"] > 0:
-            stats["average_file_size"] = stats["total_size"] / stats["total_files"]
-            stats["binary_ratio"] = stats["binary_count"] / stats["total_files"]
         else:
-            stats["average_file_size"] = 0
-            stats["binary_ratio"] = 0
+            # Process collected info
+            for size, ext, is_binary, rel_path in file_info:
+                stats["total_size"] += size
+                stats["total_files"] += 1
 
-        # Sort and limit largest files
-        stats["largest_files"].sort(key=lambda x: x["size"], reverse=True)
-        stats["largest_files"] = stats["largest_files"][:10]  # Keep top 10
+                if ext:
+                    stats["file_types"][ext] = stats["file_types"].get(ext, 0) + 1
+                if is_binary:
+                    stats["binary_count"] += 1
 
-        self._save_output(stats, output_file, "repo_stats")
-        return stats
+                stats["largest_files"].append({"path": rel_path, "size": size})
+
+            # Post-process stats
+            if stats["total_files"] > 0:
+                stats["average_file_size"] = stats["total_size"] / stats["total_files"]
+                stats["binary_ratio"] = stats["binary_count"] / stats["total_files"]
+            else:
+                stats["average_file_size"] = 0
+                stats["binary_ratio"] = 0
+
+            # Sort and limit largest files
+            stats["largest_files"].sort(key=lambda x: x["size"], reverse=True)
+            stats["largest_files"] = stats["largest_files"][:10]  # Keep top 10
+
+            self._save_output(stats, output_file, "repo_stats")
+            return stats
 
     def get_file_content(
         self,
@@ -623,10 +640,11 @@ class RepositoryAnalyzer:
             content = target.read_text(encoding=encoding)
             if output_file:
                 Path(output_file).write_text(content, encoding=encoding)
-            return content
-        except Exception as e:
-            logger.warning("Failed to read file %s: %s", target, e)
+        except (OSError, UnicodeError):
+            logger.warning("Failed to read file %s", target)
             return None
+        else:
+            return content
 
     def get_all_contents(
         self,
@@ -668,8 +686,7 @@ class RepositoryAnalyzer:
                 # Read file content
                 rel_path = str(path.relative_to(self._repo_path))
                 contents[rel_path] = path.read_text(encoding="utf-8")
-
-            except Exception as e:
+            except (OSError, UnicodeError) as e:
                 logger.warning("Failed to read file %s: %s", path, e)
                 continue
 
@@ -732,7 +749,7 @@ class RepositoryAnalyzer:
                 contents[rel_path] = content
         except UnicodeDecodeError as e:
             logger.warning("Failed to decode file: %s", e)
-        except Exception:
+        except OSError:
             logger.exception("Failed to process files")
 
         self._save_output(contents, output_file, "dir_contents")
@@ -768,8 +785,8 @@ class RepositoryAnalyzer:
                             deps = parser.parse(path)
                             if deps:
                                 dependencies[str(path.relative_to(self._repo_path))] = deps
-                        except Exception as e:
-                            logger.warning(f"Failed to parse dependencies in {path}: {e!s}")
+                        except (ParseError, DependencyError, OSError) as e:
+                            logger.warning("Failed to parse dependencies: %s", e)
 
             self._save_output(dependencies, output_file, "dependencies")
             return dependencies
